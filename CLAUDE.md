@@ -43,4 +43,6 @@ Der Spieler steuert eine Schlange, die sich ständig weiterbewegt. Ziel: möglic
 - Varianten im Umfang: Basisspiel + Wrap-around, Spezialfutter, Hindernisse (je als Option umschaltbar).
 - Darstellung: Schlange in Regenbogenfarben (durchlaufend), Kopf weiß mit Regenbogen-Rand, rot bei Game Over.
 - Hintergrund: 8 Weltraum-Bilder (`assets/bg_01..08.png`, generiert mit `tools/make_backgrounds.py`). Wechsel zum nächsten Bild bei jedem gefressenen Futter (normal + Spezial), 400 ms Überblendung, Abdunklung + feines Raster für Lesbarkeit. Fallback ohne Bilder: Schachbrett.
+  - In `index.html` sind die Bilder als JPEG-Data-URLs eingebettet (Block `BG-DATA-START/END`, erzeugt mit `tools/embed_backgrounds.py`). Nach Änderung der Bilder das Skript erneut ausführen.
+  - Browser: Für die Überblendung immer die rAF-Zeit (`now`) verwenden, nicht `performance.now()` mischen.
 - Änderungen an Regeln immer in beiden Versionen konsistent halten.

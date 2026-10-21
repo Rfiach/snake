@@ -27,7 +27,7 @@ Tests der Spiellogik: `python -m unittest -v`
 Normales Futter bringt 10 Punkte; mit jedem Futter wird die Schlange schneller. Der Highscore wird pro Optionskombination gespeichert (Python: `highscore.json`).
 
 ## Weltraum-Hintergründe
-Bei jedem gefressenen Futter wechselt der Hintergrund mit sanfter Überblendung zum nächsten von 8 Weltraum-Motiven (Nebel, Ringplanet, Spiralgalaxie, Schwarzes Loch, Komet …). Die Bilder liegen in `assets/` und sind selbst generiert (`tools/make_backgrounds.py`, benötigt numpy + pillow – nur zum Neu-Erzeugen).
+Bei jedem gefressenen Futter wechselt der Hintergrund mit sanfter Überblendung zum nächsten von 8 Weltraum-Motiven (Nebel, Ringplanet, Spiralgalaxie, Schwarzes Loch, Komet …). Die Bilder liegen in `assets/` (in `index.html` eingebettet via `tools/embed_backgrounds.py`) und sind selbst generiert (`tools/make_backgrounds.py`, benötigt numpy + pillow – nur zum Neu-Erzeugen).
 
 ## Dateien
 - `snake_core.py` – Spiellogik ohne Grafik
