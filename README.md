@@ -3,10 +3,11 @@
 Klassisches Snake mit Regenbogen-Schlange – als Python-Spiel (pygame) und als Browser-Version.
 
 ## Python-Version starten
-```bash
-pip install -r requirements.txt
-python snake.py
+```powershell
+py -m pip install --user -r requirements.txt
+py snake.py
 ```
+Hinweis: Verwendet wird `pygame-ce` (kompatibler pygame-Fork), da das klassische `pygame` für Python 3.14 noch keine fertigen Pakete hat.
 Tests der Spiellogik: `python -m unittest -v`
 
 ## Browser-Version

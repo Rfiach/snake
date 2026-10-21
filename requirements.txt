@@ -1,1 +1,2 @@
-pygame>=2.1
+# pygame-ce: kompatibler pygame-Fork (import pygame), mit Paketen auch für neue Python-Versionen (3.13/3.14)
+pygame-ce>=2.5
