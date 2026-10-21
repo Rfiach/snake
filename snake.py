@@ -40,6 +40,9 @@ DEATH_TEXT = {"wall": "Gegen die Wand gefahren.", "self": "In den eigenen Schwan
               "obstacle": "Gegen ein Hindernis gestoßen."}
 
 HIGHSCORE_FILE = Path(__file__).with_name("highscore.json")
+ASSETS = Path(__file__).with_name("assets")
+BG_FADE_MS = 400          # Überblendzeit beim Hintergrundwechsel
+BG_DIM = 70               # Abdunklung (0–255) über dem Bild, damit die Schlange gut sichtbar bleibt
 
 
 # ---------- Highscore (pro Optionskombination) ----------
@@ -74,6 +77,39 @@ class App:
         self.acc = 0.0
         self.flash_until = 0
         self.new_high = False
+
+        # Weltraum-Hintergründe: wechseln bei jedem gefressenen Futter
+        self.backgrounds = self.load_backgrounds()
+        self.bg_index = 0
+        self.bg_prev: int | None = None
+        self.bg_fade_start = 0
+        self.grid_overlay = self.make_grid_overlay()
+
+    def load_backgrounds(self) -> list[pygame.Surface]:
+        images = []
+        for path in sorted(ASSETS.glob("bg_*.png")):
+            try:
+                img = pygame.image.load(str(path)).convert()
+                images.append(pygame.transform.smoothscale(img, (BOARD, BOARD)))
+            except (pygame.error, OSError):
+                pass
+        return images
+
+    @staticmethod
+    def make_grid_overlay() -> pygame.Surface:
+        s = pygame.Surface((BOARD, BOARD), pygame.SRCALPHA)
+        s.fill((0, 0, 0, BG_DIM))
+        for i in range(1, GRID):
+            pygame.draw.line(s, (255, 255, 255, 14), (i * CELL, 0), (i * CELL, BOARD))
+            pygame.draw.line(s, (255, 255, 255, 14), (0, i * CELL), (BOARD, i * CELL))
+        return s
+
+    def next_background(self) -> None:
+        if len(self.backgrounds) < 2:
+            return
+        self.bg_prev = self.bg_index
+        self.bg_index = (self.bg_index + 1) % len(self.backgrounds)
+        self.bg_fade_start = pygame.time.get_ticks()
 
     # ---------- Spielsteuerung ----------
     def mode_key(self) -> str:
@@ -158,6 +194,8 @@ class App:
                 while self.acc >= self.game.tick_ms and self.game.state == RUNNING:
                     self.acc -= self.game.tick_ms
                     ev = self.game.step()
+                    if ev in ("food", "special"):
+                        self.next_background()
                     if ev in (OVER, WON):
                         self.on_game_end(ev)
 
@@ -193,10 +231,7 @@ class App:
 
     def draw_board(self, now: int) -> None:
         g = self.game
-        # Schachbrett
-        for y in range(g.height):
-            for x in range(g.width):
-                pygame.draw.rect(self.screen, CHECK_B if (x + y) % 2 else CHECK_A, self.cell_rect(x, y))
+        self.draw_background(now)
 
         # Hindernisse
         for ox, oy in g.obstacles:
@@ -260,6 +295,25 @@ class App:
         pygame.draw.rect(self.screen, DANGER if flashing else PANEL, frame, width=3, border_radius=6)
         if g.wrap and not flashing:
             self.draw_dashed_frame(frame.inflate(-2, -2))
+
+    def draw_background(self, now: int) -> None:
+        g = self.game
+        if not self.backgrounds:   # Fallback ohne Bilder: Schachbrett
+            for y in range(g.height):
+                for x in range(g.width):
+                    pygame.draw.rect(self.screen, CHECK_B if (x + y) % 2 else CHECK_A, self.cell_rect(x, y))
+            return
+        cur = self.backgrounds[self.bg_index]
+        t = (now - self.bg_fade_start) / BG_FADE_MS
+        if self.bg_prev is not None and t < 1:
+            self.screen.blit(self.backgrounds[self.bg_prev], (BOARD_X, BOARD_Y))
+            cur.set_alpha(int(255 * t))
+            self.screen.blit(cur, (BOARD_X, BOARD_Y))
+            cur.set_alpha(None)
+        else:
+            self.bg_prev = None
+            self.screen.blit(cur, (BOARD_X, BOARD_Y))
+        self.screen.blit(self.grid_overlay, (BOARD_X, BOARD_Y))
 
     def draw_dashed_frame(self, r: pygame.Rect, dash: int = 6) -> None:
         for x in range(r.left, r.right, dash * 2):

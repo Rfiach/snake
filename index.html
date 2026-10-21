@@ -367,6 +367,7 @@ if (typeof module !== 'undefined') module.exports = SnakeCore;
       while (acc >= game.tickMs && game.state === 'running') {
         acc -= game.tickMs;
         const ev = SnakeCore.step(game);
+        if (ev === 'food' || ev === 'special') nextBackground();
         if (ev === 'over' || ev === 'won') onGameEnd(ev);
         updateHud();
       }
@@ -421,16 +422,61 @@ if (typeof module !== 'undefined') module.exports = SnakeCore;
     }
   }
 
+  // ---- Weltraum-Hintergründe: wechseln bei jedem gefressenen Futter ----
+  const BG_FADE_MS = 400, BG_DIM = 0.27;
+  const backgrounds = Array.from({ length: 8 }, (_, i) => {
+    const img = new Image();
+    img.src = `assets/bg_0${i + 1}.png`;
+    return img;
+  });
+  const bgReady = img => img.complete && img.naturalWidth > 0;
+  let bgIndex = 0, bgPrev = null, bgFadeStart = 0;
+
+  function nextBackground() {
+    const ready = backgrounds.filter(bgReady).length;
+    if (ready < 2) return;
+    bgPrev = bgIndex;
+    do { bgIndex = (bgIndex + 1) % backgrounds.length; } while (!bgReady(backgrounds[bgIndex]));
+    bgFadeStart = performance.now();
+  }
+
+  function drawBackground(now, cs) {
+    const cur = backgrounds[bgIndex];
+    if (!bgReady(cur)) {  // Fallback ohne Bilder: Schachbrett
+      ctx.fillStyle = '#101a2e';
+      for (let y = 0; y < game.h; y++)
+        for (let x = (y % 2); x < game.w; x += 2) ctx.fillRect(x * cs, y * cs, cs, cs);
+      return;
+    }
+    const W = canvas.width, H = canvas.height;
+    const t = (now - bgFadeStart) / BG_FADE_MS;
+    if (bgPrev !== null && t < 1) {
+      ctx.drawImage(backgrounds[bgPrev], 0, 0, W, H);
+      ctx.globalAlpha = Math.max(0, t);
+      ctx.drawImage(cur, 0, 0, W, H);
+      ctx.globalAlpha = 1;
+    } else {
+      bgPrev = null;
+      ctx.drawImage(cur, 0, 0, W, H);
+    }
+    // Abdunklung + feines Raster, damit die Schlange gut sichtbar bleibt
+    ctx.fillStyle = `rgba(0,0,0,${BG_DIM})`;
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = 'rgba(255,255,255,0.055)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 1; i < game.w; i++) { ctx.moveTo(i * cs + 0.5, 0); ctx.lineTo(i * cs + 0.5, H); }
+    for (let i = 1; i < game.h; i++) { ctx.moveTo(0, i * cs + 0.5); ctx.lineTo(W, i * cs + 0.5); }
+    ctx.stroke();
+  }
+
   // ---- Zeichnen ----
   function render(now = performance.now()) {
     const cs = canvas.width / game.w;
     ctx.fillStyle = '#0b1220';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Schachbrettmuster
-    ctx.fillStyle = '#101a2e';
-    for (let y = 0; y < game.h; y++)
-      for (let x = (y % 2); x < game.w; x += 2) ctx.fillRect(x * cs, y * cs, cs, cs);
+    drawBackground(now, cs);
 
     // Wrap-Modus: gestrichelter Rand als Hinweis
     if (game.wrap) {
