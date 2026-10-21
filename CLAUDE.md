@@ -36,6 +36,10 @@ Der Spieler steuert eine Schlange, die sich ständig weiterbewegt. Ziel: möglic
 - Tempostufen / Level
 
 ## Entscheidungen
-- Technologie: HTML/JavaScript, eine Datei `index.html` (Canvas).
+- Hauptversion: Python mit pygame.
+  - `snake_core.py`: reine Spiellogik (`Game`), ohne pygame, getestet in `test_snake_core.py` (unittest).
+  - `snake.py`: pygame-Oberfläche, Loop mit festen Schritten, Eingabe, Overlays. Optionen per Taste 1/2/3 vor dem Start. Highscore in `highscore.json`.
+- Browser-Version `index.html` (HTML/JS, Canvas) mit gleichem Funktionsumfang; Logik im `<script id="core">`.
 - Varianten im Umfang: Basisspiel + Wrap-around, Spezialfutter, Hindernisse (je als Option umschaltbar).
-- Struktur: Spiellogik im `<script id="core">` (`SnakeCore`, ohne DOM, per Node testbar); UI/Loop/Eingabe im zweiten Script.
+- Darstellung: Schlange in Regenbogenfarben (durchlaufend), Kopf weiß mit Regenbogen-Rand, rot bei Game Over.
+- Änderungen an Regeln immer in beiden Versionen konsistent halten.
