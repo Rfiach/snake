@@ -10,6 +10,20 @@ py snake.py
 Hinweis: Verwendet wird `pygame-ce` (kompatibler pygame-Fork), da das klassische `pygame` für Python 3.14 noch keine fertigen Pakete hat.
 Tests der Spiellogik: `python -m unittest -v`
 
+## Mit Gradio hosten
+Die Gradio-Anwendung verwendet die Browser-Version. Für einen öffentlichen,
+temporären Gradio-Link lokal starten:
+```powershell
+py -m pip install -r requirements.txt
+py app.py
+```
+Gradio zeigt im Terminal eine öffentliche URL der Form
+`https://….gradio.live` an und öffnet die Anwendung lokal im Browser. Den
+öffentlichen Link kannst du mit anderen teilen. Das Terminal und der Rechner
+müssen laufen, solange der Link verwendet werden soll; der Share-Link ist
+temporär und nicht für dauerhaftes Hosting gedacht. Für dauerhaftes Hosting
+benötigst du einen dauerhaft laufenden Gradio-Server oder einen Hosting-Dienst.
+
 ## Browser-Version
 `index.html` im Browser öffnen (oder per GitHub Pages).
 
@@ -32,5 +46,6 @@ Bei jedem gefressenen Futter wechselt der Hintergrund mit sanfter Überblendung 
 ## Dateien
 - `snake_core.py` – Spiellogik ohne Grafik
 - `snake.py` – pygame-Oberfläche
+- `app.py` – Gradio-Host für die Browser-Version
 - `test_snake_core.py` – Tests
 - `index.html` – Browser-Version
