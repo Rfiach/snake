@@ -55,6 +55,8 @@
   .scores td.name { text-align: left; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .scores th.name { text-align: left; }
   .scores tr.mark td { background: #3f340c; color: var(--gold); }
+  .note { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+  .note.warn { color: var(--gold); }
   .help { text-align: center; color: var(--muted); font-size: 13px; margin: 8px 0; }
   kbd { background: var(--panel); border-radius: 4px; padding: 1px 6px; font-size: 12px; }
   .dpad { display: grid; grid-template-columns: repeat(3, 56px); grid-template-rows: repeat(2, 56px);
@@ -84,6 +86,7 @@
       <form class="name-form hidden" id="nameForm" autocomplete="off">
         <label for="nameInput">Dein Name:</label>
         <input id="nameInput" maxlength="16" spellcheck="false">
+        <small class="note hidden" id="nameHint">Der Name ist online für alle sichtbar – bitte keinen vollen echten Namen.</small>
         <div class="row">
           <button type="submit" class="primary">Speichern</button>
           <button type="button" class="secondary" id="nameSkip">Überspringen</button>
@@ -100,6 +103,7 @@
           <tbody id="scoreRows"></tbody>
         </table>
         <p id="boardEmpty">Noch keine Einträge</p>
+        <p class="note" id="boardSource"></p>
       </div>
       <button class="primary" id="ovButton">Spiel starten</button>
       <button class="secondary" id="ovBoard">Bestenliste (H)</button>
@@ -352,7 +356,8 @@ const BG_DATA = [
                title: $('ovTitle'), text: $('ovText'), hint: $('ovHint'), button: $('ovButton') };
   const opt = { wrap: $('optWrap'), obstacles: $('optObstacles'), special: $('optSpecial') };
   const lb = { form: $('nameForm'), input: $('nameInput'), skip: $('nameSkip'), view: $('boardView'),
-               label: $('modeLabel'), rows: $('scoreRows'), empty: $('boardEmpty'), open: $('ovBoard') };
+               label: $('modeLabel'), rows: $('scoreRows'), empty: $('boardEmpty'), open: $('ovBoard'),
+               source: $('boardSource'), nameHint: $('nameHint') };
 
   const KEYMAP = {
     ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
@@ -370,8 +375,11 @@ const BG_DATA = [
   const currentMode = () => [opt.wrap, opt.obstacles, opt.special].map(o => o.checked ? 1 : 0).join('');
   const modeLabel = m => OPTION_LABELS.filter((_, i) => m[i] === '1').join(' + ') || 'Basis';
 
-  // Speicher hinter einer async-Schnittstelle, damit später ein Online-Speicher eingesetzt werden kann
-  const ScoreStore = {
+  // Online-Bestenliste: cloud/build.mjs setzt beim Deploy '/api/scores' ein; null = nur lokal
+  const SCORE_API = null;
+
+  // Lokaler Speicher im Browser
+  const LocalStore = {
     key: m => `snake.scores.${GRID_W}x${GRID_H}.${m}`,
     async load(m) {
       try {
@@ -386,6 +394,54 @@ const BG_DATA = [
       const res = SnakeCore.insertScore(await this.load(m), entry);
       try { localStorage.setItem(this.key(m), JSON.stringify(res.list)); } catch { /* ignorieren */ }
       return res;
+    },
+  };
+
+  // Gemeinsame Bestenliste auf dem Server (Cloudflare Worker + D1)
+  const OnlineStore = {
+    async request(init, query = '') {
+      const res = await fetch(SCORE_API + query, { ...init, headers: { 'Content-Type': 'application/json' } });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw Object.assign(new Error(body.error || `Fehler ${res.status}`), { status: res.status });
+      return body;
+    },
+    async load(m) { return (await this.request({}, `?mode=${GRID_W}x${GRID_H}-${m}`)).list; },
+    async add(m, entry) {
+      return this.request({ method: 'POST', body: JSON.stringify({ mode: `${GRID_W}x${GRID_H}-${m}`,
+        name: entry.name, score: entry.score, length: entry.length }) });
+    },
+  };
+
+  // Online, wenn konfiguriert; ist der Server nicht erreichbar, wird lokal gespeichert
+  let storeNote = SCORE_API ? 'Online-Bestenliste' : 'Lokale Bestenliste (nur in diesem Browser)';
+  let storeWarn = false;
+  const ScoreStore = {
+    async load(m) {
+      if (!SCORE_API) return LocalStore.load(m);
+      try {
+        const list = await OnlineStore.load(m);
+        storeNote = 'Online-Bestenliste'; storeWarn = false;
+        return list;
+      } catch {
+        storeNote = 'Server nicht erreichbar – lokale Bestenliste'; storeWarn = true;
+        return LocalStore.load(m);
+      }
+    },
+    async add(m, entry) {
+      if (!SCORE_API) return LocalStore.add(m, entry);
+      try {
+        const res = await OnlineStore.add(m, entry);
+        storeNote = res.rank === null ? 'Für die Top 10 hat es online knapp nicht gereicht.' : 'Online gespeichert';
+        storeWarn = res.rank === null;
+        return res;
+      } catch (err) {
+        if (err.status >= 400 && err.status < 500) {   // vom Server abgelehnt (z. B. zu viele Einträge)
+          storeNote = err.message; storeWarn = true;
+          return { list: await this.load(m), rank: null };
+        }
+        storeNote = 'Server nicht erreichbar – lokal gespeichert'; storeWarn = true;
+        return LocalStore.add(m, entry);
+      }
     },
   };
 
@@ -514,6 +570,7 @@ const BG_DATA = [
     if (SnakeCore.qualifies(table, game.score)) {
       view = 'name';
       lb.input.value = session.name;
+      lb.nameHint.classList.toggle('hidden', !SCORE_API);
       setTimeout(() => { lb.input.focus(); lb.input.select(); }, 0);
     }
     if (ev === 'over') {
@@ -535,20 +592,20 @@ const BG_DATA = [
     updateHud();
     highlight = rank === null ? null : { mode, rank };
     lb.input.blur();
-    openBoard();
+    openBoard(list);
   }
 
   function skipName() { lb.input.blur(); view = 'main'; updateOverlay(); }
 
-  function openBoard() { boardMode = currentMode(); view = 'board'; updateOverlay(); renderBoard(); }
+  function openBoard(rows) { boardMode = currentMode(); view = 'board'; updateOverlay(); renderBoard(rows); }
   function closeBoard() { view = 'main'; updateOverlay(); }
   function switchMode(step) {
     boardMode = ALL_MODES[(ALL_MODES.indexOf(boardMode) + step + ALL_MODES.length) % ALL_MODES.length];
     renderBoard();
   }
 
-  async function renderBoard() {
-    const mode = boardMode, rows = await ScoreStore.load(mode);
+  async function renderBoard(given) {
+    const mode = boardMode, rows = given || await ScoreStore.load(mode);
     if (mode !== boardMode) return;          // inzwischen umgeschaltet
     lb.label.textContent = modeLabel(mode);
     lb.rows.replaceChildren(...rows.map((e, i) => {
@@ -564,6 +621,8 @@ const BG_DATA = [
       return tr;
     }));
     lb.empty.classList.toggle('hidden', rows.length > 0);
+    lb.source.textContent = storeNote;
+    lb.source.classList.toggle('warn', storeWarn);
   }
 
   // ---- HUD & Overlay ----

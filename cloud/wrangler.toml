@@ -1,0 +1,18 @@
+# Snake auf Cloudflare Workers: Spiel (statische Datei) + Bestenlisten-API mit D1
+name = "snake"
+main = "src/worker.js"
+compatibility_date = "2026-10-20"
+
+# Kopiert ../index.html nach public/ und schaltet die Online-Bestenliste ein
+[build]
+command = "node build.mjs"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "snake-scores"
+database_id = "33ddc593-a4ce-4a11-a9bf-1fe5b224b7f4"
+migrations_dir = "migrations"

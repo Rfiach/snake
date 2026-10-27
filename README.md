@@ -49,6 +49,27 @@ Normales Futter bringt 10 Punkte; mit jedem Futter wird die Schlange schneller.
 - Nach dem Spiel wird nach dem Namen gefragt, wenn die Punkte für die Liste reichen (Enter speichert, Esc überspringt). Der Name bleibt für die laufende Sitzung vorbelegt.
 - **H** zeigt die Bestenliste, **←/→** wechselt dort zwischen den Modi.
 - Gespeichert wird lokal: Python in `highscore.json`, Browser im `localStorage`.
+- In der Online-Version (Cloudflare, siehe unten) teilen sich alle Spieler eine gemeinsame Bestenliste. Ist der Server nicht erreichbar, speichert der Browser lokal.
+
+## Online-Version (Cloudflare Workers + D1)
+Ein Worker liefert das Spiel aus und stellt die Bestenlisten-API bereit (`cloud/`):
+- `GET /api/scores?mode=28x18-001` – Top 10 eines Modus
+- `POST /api/scores` mit `{ mode, name, score, length }` – Eintrag speichern; der Server prüft die Plausibilität (Punkte passen zur Länge), bereinigt den Namen und begrenzt auf 5 Einträge pro Minute und Absender.
+
+`cloud/build.mjs` kopiert `index.html` nach `cloud/public/` und schaltet dabei die Online-Bestenliste ein (`SCORE_API`). Die lokale `index.html` bleibt rein lokal.
+
+Einmalig einrichten:
+```powershell
+cd cloud
+npm install
+npx wrangler login
+npx wrangler d1 create snake-scores        # ausgegebene database_id in wrangler.toml eintragen
+npm run db:init:remote
+npm run deploy
+```
+Lokal testen: `npm run db:init:local`, dann `npm run dev` (http://127.0.0.1:8787). Tests der Prüfregeln: `npm test`.
+
+Bestenliste zurücksetzen: `npx wrangler d1 execute snake-scores --remote --command "DELETE FROM scores"`
 
 ## Weltraum-Hintergründe
 Bei jedem gefressenen Futter wechselt der Hintergrund mit sanfter Überblendung zum nächsten von 8 Weltraum-Motiven (Nebel, Ringplanet, Spiralgalaxie, Schwarzes Loch, Komet …). Die Bilder liegen in `assets/` (in `index.html` eingebettet via `tools/embed_backgrounds.py`) und sind selbst generiert (`tools/make_backgrounds.py`, benötigt numpy + pillow – nur zum Neu-Erzeugen).
@@ -61,3 +82,4 @@ Bei jedem gefressenen Futter wechselt der Hintergrund mit sanfter Überblendung 
 - `index.html` – Browser-Version
 - `assets/` – Hintergrundbilder
 - `tools/` – Skripte zum Erzeugen und Einbetten der Hintergründe
+- `cloud/` – Cloudflare Worker (API + Auslieferung), D1-Schema, Tests
