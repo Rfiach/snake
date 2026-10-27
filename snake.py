@@ -1,4 +1,4 @@
-"""Snake – pygame-Oberfläche.  Start: python snake.py  (vorher: pip install pygame)"""
+"""Snake – pygame-Oberfläche.  Start: py snake.py  (vorher: py -m pip install -r requirements.txt)"""
 from __future__ import annotations
 
 import json
@@ -11,7 +11,7 @@ import pygame
 from snake_core import DIRS, OVER, PAUSED, RUNNING, START, WON, Game
 
 # ---------- Layout & Farben ----------
-SCALE = 1.5                      # Darstellungsfaktor (nur Optik, keine Auswirkung auf die Spiellogik)
+SCALE = 1.5                      # Faktor für HUD, Schrift, Ränder, Linien (nur Optik, nicht die Spiellogik)
 
 
 def sc(v: float) -> int:
