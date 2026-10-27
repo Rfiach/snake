@@ -1,9 +1,10 @@
 """Tests der Pflichtanforderungen aus CLAUDE.md.  Ausführen: python -m unittest -v"""
 import random
 import unittest
+from datetime import date
 
-from snake_core import (DIRS, MAX_SCORES, NAME_MAX, OVER, RUNNING, WON, Game, Special, clean_name,
-                        insert_score, qualifies)
+from snake_core import (DIRS, MAX_SCORES, NAME_MAX, NEWYEAR, NORMAL, OVER, RUNNING, WON, XMAS, Game, Special,
+                        clean_name, first_advent, insert_score, qualifies, resolve_theme, season)
 
 
 def make(**kw) -> Game:
@@ -183,6 +184,28 @@ class TestLeaderboard(unittest.TestCase):
         self.assertEqual(clean_name("  Max   Muster \n"), "Max Muster")
         self.assertEqual(clean_name("\t\x00 "), "Anonym")
         self.assertEqual(len(clean_name("x" * 50)), NAME_MAX)
+
+
+class TestTheme(unittest.TestCase):
+    def test_first_advent(self):
+        self.assertEqual(first_advent(2026), date(2026, 11, 29))
+        self.assertEqual(first_advent(2027), date(2027, 11, 28))
+        self.assertEqual(first_advent(2022), date(2022, 11, 27))   # 25.12. war ein Sonntag
+
+    def test_season_boundaries(self):
+        self.assertEqual(season(date(2026, 11, 28)), NORMAL)
+        self.assertEqual(season(date(2026, 11, 29)), XMAS)
+        self.assertEqual(season(date(2026, 12, 30)), XMAS)
+        self.assertEqual(season(date(2026, 12, 31)), NEWYEAR)
+        self.assertEqual(season(date(2027, 1, 1)), NORMAL)
+        self.assertEqual(season(date(2026, 7, 1)), NORMAL)
+
+    def test_resolve_theme(self):
+        summer, advent = date(2026, 7, 1), date(2026, 12, 10)
+        self.assertEqual(resolve_theme("auto", summer), NORMAL)
+        self.assertEqual(resolve_theme("auto", advent), XMAS)
+        self.assertEqual(resolve_theme(XMAS, summer), XMAS)
+        self.assertEqual(resolve_theme(NORMAL, advent), NORMAL)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 """Snake – reine Spiellogik ohne Grafik (per unittest testbar)."""
 from __future__ import annotations
 
+import datetime
 import random
 from dataclasses import dataclass, field
 from typing import Callable, Optional
@@ -242,3 +243,27 @@ def insert_score(scores: list[dict], entry: dict) -> tuple[list[dict], Optional[
     rank = next((i for i, e in enumerate(scores) if entry["score"] > e["score"]), len(scores))
     new = scores[:rank] + [entry] + scores[rank:]
     return new[:MAX_SCORES], rank
+
+
+# ---------- Design nach Jahreszeit (nur Optik, Spielregeln bleiben gleich) ----------
+NORMAL, XMAS, NEWYEAR = "normal", "xmas", "newyear"
+THEME_SETTINGS = ("auto", XMAS, NEWYEAR, NORMAL)   # Reihenfolge beim Umschalten
+
+
+def first_advent(year: int) -> datetime.date:
+    """1. Advent: vier Sonntage vor Weihnachten (4. Advent = letzter Sonntag vor dem 25.12.)."""
+    xmas = datetime.date(year, 12, 25)
+    back = (xmas.weekday() + 1) % 7 or 7          # Tage bis zum vorherigen Sonntag
+    return xmas - datetime.timedelta(days=back + 21)
+
+
+def season(day: datetime.date) -> str:
+    """Weihnachten vom 1. Advent bis 30.12., Silvester am 31.12., sonst normal."""
+    if day.month == 12 and day.day == 31:
+        return NEWYEAR
+    return XMAS if first_advent(day.year) <= day <= datetime.date(day.year, 12, 30) else NORMAL
+
+
+def resolve_theme(setting: str, day: datetime.date) -> str:
+    """'auto' folgt dem Datum, sonst gilt das gewählte Design."""
+    return season(day) if setting == "auto" else setting

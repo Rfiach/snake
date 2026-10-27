@@ -9,8 +9,9 @@ from pathlib import Path
 
 import pygame
 
-from snake_core import (DIRS, NAME_MAX, OVER, PAUSED, RUNNING, START, WON, Game, clean_name, insert_score,
-                        qualifies)
+import snake_xmas as xm
+from snake_core import (DIRS, NAME_MAX, NEWYEAR, NORMAL, OVER, PAUSED, RUNNING, START, THEME_SETTINGS, WON, Game,
+                        clean_name, insert_score, qualifies, resolve_theme)
 
 # ---------- Layout & Farben ----------
 SCALE = 1.5                      # Faktor für HUD, Schrift, Ränder, Linien (nur Optik, nicht die Spiellogik)
@@ -53,6 +54,7 @@ HIGHSCORE_FILE = Path(__file__).with_name("highscore.json")
 ASSETS = Path(__file__).with_name("assets")
 BG_FADE_MS = 400          # Überblendzeit beim Hintergrundwechsel
 BG_DIM = 70               # Abdunklung (0–255) über dem Bild, damit die Schlange gut sichtbar bleibt
+THEME_LABELS = {"auto": "Auto", "xmas": "Weihnachten", "newyear": "Silvester", "normal": "Normal"}
 
 
 # ---------- Bestenliste (Top 10 je Feldgröße und Optionskombination) ----------
@@ -114,20 +116,46 @@ class App:
         self.entering = False
         self.name_buf = ""
         self.input_from = 0
+        self.keys_down: set[int] = set()       # aktuell gedrückte Tasten
+        self.blocked_keys: set[int] = set()    # beim Spielende gedrückt -> erst nach Loslassen wieder aktiv
         self.board_open = False
         self.board_mode = 0           # Index in ALL_MODES
         self.highlight: tuple[str, int] | None = None   # (Modus, Platz) des letzten Eintrags
 
-        # Weltraum-Hintergründe: wechseln bei jedem gefressenen Futter
-        self.backgrounds = self.load_backgrounds()
+        # Weltraum-Hintergründe: wechseln bei jedem gefressenen Futter (eigener Satz für Weihnachten)
+        self.bg_sets = {NORMAL: self.load_backgrounds("bg_*.png"), "festive": self.load_backgrounds("xmas_*.png")}
         self.bg_index = 0
         self.bg_prev: int | None = None
         self.bg_fade_start = 0
         self.grid_overlay = self.make_grid_overlay()
 
-    def load_backgrounds(self) -> list[pygame.Surface]:
+        # Design nach Datum (Weihnachten / Silvester / normal), per Taste 4 umschaltbar – nur Optik
+        self.theme_setting = "auto"
+        self.theme = resolve_theme(self.theme_setting, datetime.date.today())
+        board = pygame.Rect(BOARD_X, BOARD_Y, BOARD_W, BOARD_H)
+        self.snow, self.fireworks, self.sparkles = xm.Snow(board), xm.Fireworks(board), xm.Sparkles()
+
+    @property
+    def festive(self) -> bool:
+        return self.theme != NORMAL
+
+    @property
+    def backgrounds(self) -> list[pygame.Surface]:
+        return (self.festive and self.bg_sets["festive"]) or self.bg_sets[NORMAL]
+
+    def cycle_theme(self) -> None:
+        i = THEME_SETTINGS.index(self.theme_setting)
+        self.theme_setting = THEME_SETTINGS[(i + 1) % len(THEME_SETTINGS)]
+        self.update_theme()
+
+    def update_theme(self) -> None:
+        theme = resolve_theme(self.theme_setting, datetime.date.today())
+        if theme != self.theme:
+            self.theme, self.bg_index, self.bg_prev = theme, 0, None
+
+    def load_backgrounds(self, pattern: str) -> list[pygame.Surface]:
         images = []
-        for path in sorted(ASSETS.glob("bg_*.png")):
+        for path in sorted(ASSETS.glob(pattern)):
             try:
                 img = pygame.image.load(str(path)).convert()
                 # Quadratische Bilder formatfüllend skalieren und mittig zuschneiden (keine Verzerrung)
@@ -172,6 +200,7 @@ class App:
     def begin(self) -> None:
         if self.game.state in (OVER, WON):
             self.game = self.new_game()
+        self.update_theme()          # falls inzwischen ein neuer Tag begonnen hat
         self.game.start()
         self.new_high = False
         self.board_open = False
@@ -197,8 +226,11 @@ class App:
         if qualifies(self.table, self.game.score):
             self.entering, self.name_buf = True, self.session_name
             self.input_from = pygame.time.get_ticks() + 300
+            self.blocked_keys = set(self.keys_down)
         if ev == OVER:
             self.flash_until = pygame.time.get_ticks() + 600
+        elif self.festive:
+            (self.fireworks if self.theme == NEWYEAR else self.snow).burst()
 
     def submit_name(self) -> None:
         name = clean_name(self.name_buf)
@@ -257,6 +289,8 @@ class App:
             self.toggle_option("obstacles")
         elif key == pygame.K_3:
             self.toggle_option("special")
+        elif key == pygame.K_4:
+            self.cycle_theme()
 
     # ---------- Hauptschleife: feste Spielschritte, unabhängig von der Bildrate ----------
     def run(self) -> None:
@@ -267,12 +301,21 @@ class App:
                 if e.type == pygame.QUIT:
                     pygame.quit()
                     sys.exit()
+                if e.type == pygame.KEYDOWN:
+                    self.keys_down.add(e.key)
+                elif e.type == pygame.KEYUP:
+                    self.keys_down.discard(e.key)
+                    self.blocked_keys.discard(e.key)
+                elif focus_lost is not None and e.type == focus_lost:
+                    self.keys_down.clear()                   # Loslassen außerhalb des Fensters kommt nicht an
+                    self.blocked_keys.clear()
                 if self.entering:
-                    # Während der Namenseingabe steuern Tasten nicht das Spiel
-                    # (kurze Sperre, damit eine Lenk-Taste beim Aufprall nicht im Namen landet)
-                    if e.type == pygame.TEXTINPUT and pygame.time.get_ticks() >= self.input_from:
+                    # Während der Namenseingabe steuern Tasten nicht das Spiel. Tasten, die beim Spielende
+                    # noch gedrückt sind, zählen erst nach dem Loslassen (plus kurze Sperre nach dem Aufprall).
+                    locked = bool(self.blocked_keys) or pygame.time.get_ticks() < self.input_from
+                    if e.type == pygame.TEXTINPUT and not locked:
                         self.name_buf = (self.name_buf + e.text)[:NAME_MAX]
-                    elif e.type == pygame.KEYDOWN:
+                    elif e.type == pygame.KEYDOWN and not locked:
                         self.handle_name_key(e)
                 elif e.type == pygame.KEYDOWN:
                     self.handle_key(e.key)
@@ -286,9 +329,15 @@ class App:
                     ev = self.game.step()
                     if ev in ("food", "special"):
                         self.next_background()
+                        if self.festive:
+                            self.sparkles.add(*self.cell_rect(*self.game.snake[0]).center)
                     if ev in (OVER, WON):
                         self.on_game_end(ev)
 
+            if self.festive:
+                now = pygame.time.get_ticks()
+                (self.fireworks if self.theme == NEWYEAR else self.snow).update(dt, now)
+                self.sparkles.update(dt)
             self.draw(pygame.time.get_ticks())
             pygame.display.flip()
 
@@ -317,6 +366,9 @@ class App:
         for i, (label, val) in enumerate(boxes):
             r = pygame.Rect(PAD + i * (bw + gap), sc(10), bw, HUD_H - sc(20))
             pygame.draw.rect(self.screen, PANEL, r, border_radius=sc(8))
+            if self.festive:   # rot-grün-goldene Akzente
+                col = (xm.RED, xm.GREEN, xm.GOLD)[i]
+                pygame.draw.line(self.screen, col, (r.x + sc(10), r.y + 1), (r.right - sc(10), r.y + 1), sc(2))
             self.text(label, self.f_small, MUTED, (r.centerx, r.y + sc(13)))
             self.text(str(val), self.f_big, TEXT, (r.centerx, r.y + sc(34)))
 
@@ -325,13 +377,20 @@ class App:
         self.draw_background(now)
 
         # Hindernisse
+        if self.theme == NEWYEAR:
+            self.fireworks.draw(self.screen)
         for ox, oy in g.obstacles:
             r = self.cell_rect(ox, oy, sc(1))
+            if self.festive:
+                xm.draw_ice(self.screen, r)
+                continue
             pygame.draw.rect(self.screen, OBST, r, border_radius=sc(4))
             pygame.draw.rect(self.screen, OBST_HI, (r.x + sc(3), r.y + sc(3), r.w - sc(6), sc(3)))
 
-        # Futter (pulsierend)
-        if g.food:
+        # Futter (pulsierend bzw. weihnachtlich)
+        if g.food and self.festive:
+            xm.draw_food(self.screen, xm.food_kind(g.eaten), self.cell_rect(*g.food).center, CELL, now, g.eaten)
+        elif g.food:
             fx, fy = self.cell_rect(*g.food).center
             radius = CELL * 0.36 * (1 + 0.08 * math.sin(now / 150))
             pygame.draw.circle(self.screen, DANGER, (fx, fy), radius)
@@ -342,7 +401,9 @@ class App:
             sp = g.special
             sx, sy = self.cell_rect(*sp.pos).center
             blink = sp.ttl < 10 and (now // 120) % 2 == 0
-            if not blink:
+            if not blink and self.festive:
+                xm.draw_gift(self.screen, (sx, sy), CELL)
+            elif not blink:
                 pts = []
                 for i in range(10):
                     rr = CELL * (0.42 if i % 2 == 0 else 0.18)
@@ -363,16 +424,20 @@ class App:
             c.hsva = ((i * 28 - shift) % 360, 85, 100, 100)
             return c
 
-        for i in range(len(g.snake) - 1, 0, -1):
-            pygame.draw.rect(self.screen, rainbow(i), self.cell_rect(*g.snake[i], 1.5 * SCALE),
-                             border_radius=sc(5))
+        if self.festive:   # Lichterkette
+            centers = [self.cell_rect(*c).center for c in g.snake]
+            xm.draw_lights_snake(self.screen, centers, CELL, now, CELL * 1.5)
+        else:
+            for i in range(len(g.snake) - 1, 0, -1):
+                pygame.draw.rect(self.screen, rainbow(i), self.cell_rect(*g.snake[i], 1.5 * SCALE),
+                                 border_radius=sc(5))
 
-        # Kopf deutlich abgesetzt: weiß mit Regenbogen-Rand, rot bei Game Over
+        # Kopf deutlich abgesetzt: weiß mit Regenbogen-Rand (Weihnachten: grün), rot bei Game Over
         head = self.cell_rect(*g.snake[0], 0.5 * SCALE)
         pygame.draw.rect(self.screen, DANGER if g.state == OVER else (248, 250, 252), head, border_radius=sc(7))
         if g.state != OVER:
-            pygame.draw.rect(self.screen, rainbow(0), self.cell_rect(*g.snake[0], sc(2)), width=sc(3),
-                             border_radius=sc(6))
+            pygame.draw.rect(self.screen, xm.GREEN if self.festive else rainbow(0), self.cell_rect(*g.snake[0], sc(2)),
+                             width=sc(3), border_radius=sc(6))
         dx, dy = DIRS[g.direction]
         cx, cy = head.center
         px, py = -dy, dx
@@ -381,13 +446,20 @@ class App:
             ey = cy + dy * CELL * 0.18 + py * side * CELL * 0.22
             pygame.draw.circle(self.screen, (203, 213, 225), (ex, ey), CELL * 0.13)
             pygame.draw.circle(self.screen, BG, (ex + dx * CELL * 0.05, ey + dy * CELL * 0.05), CELL * 0.06)
+        if self.festive:
+            xm.draw_hat(self.screen, self.cell_rect(*g.snake[0]), dx, now)
+            self.sparkles.draw(self.screen)
+            if self.theme != NEWYEAR:
+                self.snow.draw(self.screen)
 
         # Rahmen: rot blinkend bei Game Over, gestrichelt im Wrap-Modus
         fw = sc(3)
         frame = pygame.Rect(BOARD_X - fw, BOARD_Y - fw, BOARD_W + 2 * fw, BOARD_H + 2 * fw)
         flashing = pygame.time.get_ticks() < self.flash_until
         pygame.draw.rect(self.screen, DANGER if flashing else PANEL, frame, width=fw, border_radius=sc(6))
-        if g.wrap and not flashing:
+        if g.wrap and not flashing and self.festive:
+            xm.draw_light_frame(self.screen, frame.inflate(-sc(2), -sc(2)), now)
+        elif g.wrap and not flashing:
             self.draw_dashed_frame(frame.inflate(-sc(2), -sc(2)))
 
     def draw_background(self, now: int) -> None:
@@ -423,12 +495,17 @@ class App:
         r = pygame.Rect(PAD, y0, BOARD_W, sc(30))
         pygame.draw.rect(self.screen, PANEL, r, border_radius=sc(8))
         labels = [("1", "Wrap-around", "wrap"), ("2", "Hindernisse", "obstacles"), ("3", "Spezialfutter", "special")]
-        w = BOARD_W // 3
+        w = BOARD_W // 4
         locked = self.game.state in (RUNNING, PAUSED)
         for i, (k, name, key) in enumerate(labels):
             on = self.opts[key]
             col = (ACCENT if on else MUTED) if not locked else (MUTED if not on else (21, 128, 61))
             self.text(f"[{k}] {name}: {'an' if on else 'aus'}", self.f_small, col, (PAD + w * i + w // 2, r.centery))
+        design = THEME_LABELS[self.theme_setting]
+        if self.theme_setting == "auto":
+            design += f" ({THEME_LABELS[self.theme]})"
+        self.text(f"[4] Design: {design}", self.f_small, xm.GOLD if self.festive else MUTED,
+                  (PAD + w * 3 + w // 2, r.centery))
         hint = "←↑→↓ / WASD steuern · Leertaste / P Pause · Enter Start/Neustart · H Bestenliste"
         if locked:
             hint = "Optionen änderbar vor dem Start / nach Spielende"
@@ -448,7 +525,12 @@ class App:
             self.draw_leaderboard(cx)
             return
 
-        if g.state == START:
+        death_text = xm.DEATH_TEXT if self.festive else DEATH_TEXT
+        if g.state == START and self.festive:
+            title, col = ("Guten Rutsch!", xm.GOLD) if self.theme == NEWYEAR else ("Frohe Weihnachten!", xm.GOLD)
+            line = "Friss Plätzchen, Lebkuchen und Kugeln – aber verheddere dich nicht!"
+            hint = "Pfeiltasten / WASD / Enter zum Starten"
+        elif g.state == START:
             title, col = "Snake", TEXT
             line = "Friss Futter, wachse – aber beiß dich nicht selbst!"
             hint = "Pfeiltasten / WASD / Enter zum Starten"
@@ -458,10 +540,10 @@ class App:
             hint = "Leertaste / P zum Fortsetzen"
         elif g.state == OVER:
             title, col = "Game Over", DANGER
-            line = f"{DEATH_TEXT.get(g.death_reason, '')} Punkte: {g.score}"
+            line = f"{death_text.get(g.death_reason, '')} Punkte: {g.score}"
             hint = "Neuer Highscore!" if self.new_high else "Enter / Leertaste für Neustart"
         else:  # WON
-            title, col = "Gewonnen!", GOLD
+            title, col = ("Frohe Weihnachten – gewonnen!" if self.festive else "Gewonnen!"), GOLD
             line = f"Das ganze Feld ist gefüllt. Punkte: {g.score}"
             hint = "Neuer Highscore!" if self.new_high else "Enter / Leertaste für Neustart"
 

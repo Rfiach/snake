@@ -48,4 +48,8 @@ Der Spieler steuert eine Schlange, die sich ständig weiterbewegt. Ziel: möglic
 - Hintergrund: 8 Weltraum-Bilder (`assets/bg_01..08.png`, generiert mit `tools/make_backgrounds.py`). Wechsel zum nächsten Bild bei jedem gefressenen Futter (normal + Spezial), 400 ms Überblendung, Abdunklung + feines Raster für Lesbarkeit. Fallback ohne Bilder: Schachbrett.
   - In `index.html` sind die Bilder als JPEG-Data-URLs eingebettet (Block `BG-DATA-START/END`, erzeugt mit `tools/embed_backgrounds.py`). Nach Änderung der Bilder das Skript erneut ausführen.
   - Browser: Für die Überblendung immer die rAF-Zeit (`now`) verwenden, nicht `performance.now()` mischen.
+- Saisonales Design (nur Optik, Regeln/Punkte/Bestenliste unverändert): `season()`/`resolve_theme()` im Kern beider Versionen. Weihnachten vom 1. Advent bis 30.12., Silvester (Feuerwerk statt Schnee) am 31.12., sonst normal. Einstellung Auto/Weihnachten/Silvester/Normal per Taste 4 (Browser zusätzlich Auswahlfeld, in `localStorage`, Test per `?theme=`); online ausgeblendet über `THEME_PICKER = false` aus `cloud/build.mjs`, dort gilt immer Auto).
+  - pygame-Grafik in `snake_xmas.py`, Browser im Abschnitt „Weihnachten“ des UI-Skripts – beide gleich halten.
+  - Weihnachts-Hintergründe `assets/xmas_01..08.png` (`tools/make_xmas_backgrounds.py`), eingebettet als `BG_XMAS_DATA` durch `tools/embed_backgrounds.py`.
+  - Lichterkette als Schlange, Weihnachtsmütze, Eisblöcke als Hindernisse, Geschenk als Spezialfutter, Futter: Zuckerstange/Lebkuchen/Kugel/Zimtstern/Plätzchen.
 - Änderungen an Regeln immer in beiden Versionen konsistent halten.
