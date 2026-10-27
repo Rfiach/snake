@@ -11,14 +11,22 @@ import pygame
 from snake_core import DIRS, OVER, PAUSED, RUNNING, START, WON, Game
 
 # ---------- Layout & Farben ----------
-CELL = 24
-GRID = 20
-BOARD = CELL * GRID              # 480 px
-HUD_H = 70
-FOOT_H = 70
-PAD = 12
-WIN_W = BOARD + 2 * PAD
-WIN_H = HUD_H + BOARD + FOOT_H + PAD
+SCALE = 1.5                      # Darstellungsfaktor (nur Optik, keine Auswirkung auf die Spiellogik)
+
+
+def sc(v: float) -> int:
+    return round(v * SCALE)
+
+
+CELL = 32                        # so gewählt, dass das Fenster auch bei 150 % Windows-Skalierung passt
+GRID_W, GRID_H = 28, 18          # Querformat
+BOARD_W = CELL * GRID_W          # 896 px
+BOARD_H = CELL * GRID_H          # 576 px
+HUD_H = sc(70)
+FOOT_H = sc(70)
+PAD = sc(12)
+WIN_W = BOARD_W + 2 * PAD
+WIN_H = HUD_H + BOARD_H + FOOT_H + PAD
 BOARD_X, BOARD_Y = PAD, HUD_H
 
 BG = (15, 23, 42)
@@ -66,10 +74,10 @@ class App:
         pygame.display.set_caption("Snake")
         self.screen = pygame.display.set_mode((WIN_W, WIN_H))
         self.clock = pygame.time.Clock()
-        self.f_title = pygame.font.SysFont("segoeui,arial,dejavusans", 34, bold=True)
-        self.f_big = pygame.font.SysFont("segoeui,arial,dejavusans", 24, bold=True)
-        self.f_text = pygame.font.SysFont("segoeui,arial,dejavusans", 17)
-        self.f_small = pygame.font.SysFont("segoeui,arial,dejavusans", 13)
+        self.f_title = pygame.font.SysFont("segoeui,arial,dejavusans", sc(34), bold=True)
+        self.f_big = pygame.font.SysFont("segoeui,arial,dejavusans", sc(24), bold=True)
+        self.f_text = pygame.font.SysFont("segoeui,arial,dejavusans", sc(17))
+        self.f_small = pygame.font.SysFont("segoeui,arial,dejavusans", sc(13))
 
         self.opts = {"wrap": False, "obstacles": False, "special": True}
         self.scores = load_scores()
@@ -90,18 +98,23 @@ class App:
         for path in sorted(ASSETS.glob("bg_*.png")):
             try:
                 img = pygame.image.load(str(path)).convert()
-                images.append(pygame.transform.smoothscale(img, (BOARD, BOARD)))
+                # Quadratische Bilder formatfüllend skalieren und mittig zuschneiden (keine Verzerrung)
+                side = max(BOARD_W, BOARD_H)
+                img = pygame.transform.smoothscale(img, (side, side))
+                crop = pygame.Rect((side - BOARD_W) // 2, (side - BOARD_H) // 2, BOARD_W, BOARD_H)
+                images.append(img.subsurface(crop).copy())
             except (pygame.error, OSError):
                 pass
         return images
 
     @staticmethod
     def make_grid_overlay() -> pygame.Surface:
-        s = pygame.Surface((BOARD, BOARD), pygame.SRCALPHA)
+        s = pygame.Surface((BOARD_W, BOARD_H), pygame.SRCALPHA)
         s.fill((0, 0, 0, BG_DIM))
-        for i in range(1, GRID):
-            pygame.draw.line(s, (255, 255, 255, 14), (i * CELL, 0), (i * CELL, BOARD))
-            pygame.draw.line(s, (255, 255, 255, 14), (0, i * CELL), (BOARD, i * CELL))
+        for i in range(1, GRID_W):
+            pygame.draw.line(s, (255, 255, 255, 14), (i * CELL, 0), (i * CELL, BOARD_H))
+        for i in range(1, GRID_H):
+            pygame.draw.line(s, (255, 255, 255, 14), (0, i * CELL), (BOARD_W, i * CELL))
         return s
 
     def next_background(self) -> None:
@@ -113,14 +126,15 @@ class App:
 
     # ---------- Spielsteuerung ----------
     def mode_key(self) -> str:
-        return "".join("1" if self.opts[k] else "0" for k in ("wrap", "obstacles", "special"))
+        bits = "".join("1" if self.opts[k] else "0" for k in ("wrap", "obstacles", "special"))
+        return f"{GRID_W}x{GRID_H}-{bits}"   # Highscore je Feldgröße, sonst nicht vergleichbar
 
     @property
     def high(self) -> int:
         return self.scores.get(self.mode_key(), 0)
 
     def new_game(self) -> Game:
-        return Game(width=GRID, height=GRID, wrap=self.opts["wrap"],
+        return Game(width=GRID_W, height=GRID_H, wrap=self.opts["wrap"],
                     use_obstacles=self.opts["obstacles"], use_special=self.opts["special"])
 
     def begin(self) -> None:
@@ -222,12 +236,13 @@ class App:
     def draw_hud(self) -> None:
         g = self.game
         boxes = [("PUNKTE", g.score), ("LÄNGE", len(g.snake)), ("HIGHSCORE", max(self.high, g.score))]
-        bw = (BOARD - 2 * 8) // 3
+        gap = sc(8)
+        bw = (BOARD_W - 2 * gap) // 3
         for i, (label, val) in enumerate(boxes):
-            r = pygame.Rect(PAD + i * (bw + 8), 10, bw, HUD_H - 20)
-            pygame.draw.rect(self.screen, PANEL, r, border_radius=8)
-            self.text(label, self.f_small, MUTED, (r.centerx, r.y + 13))
-            self.text(str(val), self.f_big, TEXT, (r.centerx, r.y + 34))
+            r = pygame.Rect(PAD + i * (bw + gap), sc(10), bw, HUD_H - sc(20))
+            pygame.draw.rect(self.screen, PANEL, r, border_radius=sc(8))
+            self.text(label, self.f_small, MUTED, (r.centerx, r.y + sc(13)))
+            self.text(str(val), self.f_big, TEXT, (r.centerx, r.y + sc(34)))
 
     def draw_board(self, now: int) -> None:
         g = self.game
@@ -235,16 +250,16 @@ class App:
 
         # Hindernisse
         for ox, oy in g.obstacles:
-            r = self.cell_rect(ox, oy, 1)
-            pygame.draw.rect(self.screen, OBST, r, border_radius=4)
-            pygame.draw.rect(self.screen, OBST_HI, (r.x + 3, r.y + 3, r.w - 6, 3))
+            r = self.cell_rect(ox, oy, sc(1))
+            pygame.draw.rect(self.screen, OBST, r, border_radius=sc(4))
+            pygame.draw.rect(self.screen, OBST_HI, (r.x + sc(3), r.y + sc(3), r.w - sc(6), sc(3)))
 
         # Futter (pulsierend)
         if g.food:
             fx, fy = self.cell_rect(*g.food).center
             radius = CELL * 0.36 * (1 + 0.08 * math.sin(now / 150))
             pygame.draw.circle(self.screen, DANGER, (fx, fy), radius)
-            pygame.draw.rect(self.screen, (22, 163, 74), (fx - 1, fy - CELL * 0.48, 3, CELL * 0.18))
+            pygame.draw.rect(self.screen, (22, 163, 74), (fx - sc(1), fy - CELL * 0.48, sc(3), CELL * 0.18))
 
         # Spezialfutter mit Restzeit-Ring
         if g.special:
@@ -262,7 +277,7 @@ class App:
             ring = pygame.Rect(0, 0, CELL, CELL)
             ring.center = (sx, sy)
             # pygame-Winkel laufen gegen den Uhrzeigersinn; Start oben
-            pygame.draw.arc(self.screen, GOLD, ring, math.pi / 2, math.pi / 2 + 2 * math.pi * frac, 2)
+            pygame.draw.arc(self.screen, GOLD, ring, math.pi / 2, math.pi / 2 + 2 * math.pi * frac, sc(2))
 
         # Schlange in Regenbogenfarben, Farben laufen langsam durch
         shift = now / 20 if g.state == RUNNING else 0
@@ -273,13 +288,15 @@ class App:
             return c
 
         for i in range(len(g.snake) - 1, 0, -1):
-            pygame.draw.rect(self.screen, rainbow(i), self.cell_rect(*g.snake[i], 1.5), border_radius=5)
+            pygame.draw.rect(self.screen, rainbow(i), self.cell_rect(*g.snake[i], 1.5 * SCALE),
+                             border_radius=sc(5))
 
         # Kopf deutlich abgesetzt: weiß mit Regenbogen-Rand, rot bei Game Over
-        head = self.cell_rect(*g.snake[0], 0.5)
-        pygame.draw.rect(self.screen, DANGER if g.state == OVER else (248, 250, 252), head, border_radius=7)
+        head = self.cell_rect(*g.snake[0], 0.5 * SCALE)
+        pygame.draw.rect(self.screen, DANGER if g.state == OVER else (248, 250, 252), head, border_radius=sc(7))
         if g.state != OVER:
-            pygame.draw.rect(self.screen, rainbow(0), self.cell_rect(*g.snake[0], 2), width=3, border_radius=6)
+            pygame.draw.rect(self.screen, rainbow(0), self.cell_rect(*g.snake[0], sc(2)), width=sc(3),
+                             border_radius=sc(6))
         dx, dy = DIRS[g.direction]
         cx, cy = head.center
         px, py = -dy, dx
@@ -290,11 +307,12 @@ class App:
             pygame.draw.circle(self.screen, BG, (ex + dx * CELL * 0.05, ey + dy * CELL * 0.05), CELL * 0.06)
 
         # Rahmen: rot blinkend bei Game Over, gestrichelt im Wrap-Modus
-        frame = pygame.Rect(BOARD_X - 3, BOARD_Y - 3, BOARD + 6, BOARD + 6)
+        fw = sc(3)
+        frame = pygame.Rect(BOARD_X - fw, BOARD_Y - fw, BOARD_W + 2 * fw, BOARD_H + 2 * fw)
         flashing = pygame.time.get_ticks() < self.flash_until
-        pygame.draw.rect(self.screen, DANGER if flashing else PANEL, frame, width=3, border_radius=6)
+        pygame.draw.rect(self.screen, DANGER if flashing else PANEL, frame, width=fw, border_radius=sc(6))
         if g.wrap and not flashing:
-            self.draw_dashed_frame(frame.inflate(-2, -2))
+            self.draw_dashed_frame(frame.inflate(-sc(2), -sc(2)))
 
     def draw_background(self, now: int) -> None:
         g = self.game
@@ -315,20 +333,21 @@ class App:
             self.screen.blit(cur, (BOARD_X, BOARD_Y))
         self.screen.blit(self.grid_overlay, (BOARD_X, BOARD_Y))
 
-    def draw_dashed_frame(self, r: pygame.Rect, dash: int = 6) -> None:
+    def draw_dashed_frame(self, r: pygame.Rect, dash: int = sc(6)) -> None:
+        lw = sc(2)
         for x in range(r.left, r.right, dash * 2):
-            pygame.draw.line(self.screen, WRAP_COL, (x, r.top), (min(x + dash, r.right), r.top), 2)
-            pygame.draw.line(self.screen, WRAP_COL, (x, r.bottom), (min(x + dash, r.right), r.bottom), 2)
+            pygame.draw.line(self.screen, WRAP_COL, (x, r.top), (min(x + dash, r.right), r.top), lw)
+            pygame.draw.line(self.screen, WRAP_COL, (x, r.bottom), (min(x + dash, r.right), r.bottom), lw)
         for y in range(r.top, r.bottom, dash * 2):
-            pygame.draw.line(self.screen, WRAP_COL, (r.left, y), (r.left, min(y + dash, r.bottom)), 2)
-            pygame.draw.line(self.screen, WRAP_COL, (r.right, y), (r.right, min(y + dash, r.bottom)), 2)
+            pygame.draw.line(self.screen, WRAP_COL, (r.left, y), (r.left, min(y + dash, r.bottom)), lw)
+            pygame.draw.line(self.screen, WRAP_COL, (r.right, y), (r.right, min(y + dash, r.bottom)), lw)
 
     def draw_footer(self) -> None:
-        y0 = BOARD_Y + BOARD + 10
-        r = pygame.Rect(PAD, y0, BOARD, 30)
-        pygame.draw.rect(self.screen, PANEL, r, border_radius=8)
+        y0 = BOARD_Y + BOARD_H + sc(10)
+        r = pygame.Rect(PAD, y0, BOARD_W, sc(30))
+        pygame.draw.rect(self.screen, PANEL, r, border_radius=sc(8))
         labels = [("1", "Wrap-around", "wrap"), ("2", "Hindernisse", "obstacles"), ("3", "Spezialfutter", "special")]
-        w = BOARD // 3
+        w = BOARD_W // 3
         locked = self.game.state in (RUNNING, PAUSED)
         for i, (k, name, key) in enumerate(labels):
             on = self.opts[key]
@@ -337,14 +356,14 @@ class App:
         hint = "←↑→↓ / WASD steuern · Leertaste / P Pause · Enter Start/Neustart"
         if locked:
             hint = "Optionen änderbar vor dem Start / nach Spielende"
-        self.text(hint, self.f_small, MUTED, (WIN_W // 2, y0 + 46))
+        self.text(hint, self.f_small, MUTED, (WIN_W // 2, y0 + sc(46)))
 
     def draw_overlay(self) -> None:
         g = self.game
-        shade = pygame.Surface((BOARD, BOARD), pygame.SRCALPHA)
+        shade = pygame.Surface((BOARD_W, BOARD_H), pygame.SRCALPHA)
         shade.fill((15, 23, 42, 200))
         self.screen.blit(shade, (BOARD_X, BOARD_Y))
-        cx, cy = BOARD_X + BOARD // 2, BOARD_Y + BOARD // 2
+        cx, cy = BOARD_X + BOARD_W // 2, BOARD_Y + BOARD_H // 2
 
         if g.state == START:
             title, col = "Snake", TEXT
@@ -363,9 +382,10 @@ class App:
             line = f"Das ganze Feld ist gefüllt. Punkte: {g.score}"
             hint = "Neuer Highscore!" if self.new_high else "Enter / Leertaste für Neustart"
 
-        self.text(title, self.f_title, col, (cx, cy - 40))
-        self.text(line, self.f_text, TEXT, (cx, cy + 4))
-        self.text(hint, self.f_text, GOLD if self.new_high and g.state in (OVER, WON) else MUTED, (cx, cy + 34))
+        self.text(title, self.f_title, col, (cx, cy - sc(40)))
+        self.text(line, self.f_text, TEXT, (cx, cy + sc(4)))
+        self.text(hint, self.f_text, GOLD if self.new_high and g.state in (OVER, WON) else MUTED,
+                  (cx, cy + sc(34)))
 
 
 if __name__ == "__main__":

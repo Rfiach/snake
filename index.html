@@ -15,13 +15,13 @@
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     display: flex; justify-content: center; align-items: flex-start; padding: 24px 12px;
   }
-  .app { width: 100%; max-width: 520px; }
+  .app { width: 100%; max-width: 900px; }
   h1 { margin: 0 0 12px; font-size: 28px; letter-spacing: 2px; text-align: center; color: var(--accent); }
   .hud { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
   .hud div { flex: 1; background: var(--panel); border-radius: 8px; padding: 8px 10px; text-align: center; }
   .hud span { display: block; font-size: 11px; text-transform: uppercase; color: var(--muted); letter-spacing: 1px; }
   .hud b { font-size: 22px; font-variant-numeric: tabular-nums; }
-  .board { position: relative; width: 100%; aspect-ratio: 1 / 1; border-radius: 10px; overflow: hidden;
+  .board { position: relative; width: 100%; aspect-ratio: 28 / 18; border-radius: 10px; overflow: hidden;
            border: 3px solid var(--panel); transition: border-color .15s; }
   .board.flash { border-color: var(--danger); }
   canvas { display: block; width: 100%; height: 100%; touch-action: none; }
@@ -60,7 +60,7 @@
   </div>
 
   <div class="board" id="board">
-    <canvas id="canvas" width="480" height="480"></canvas>
+    <canvas id="canvas" width="840" height="540"></canvas>
     <div class="overlay" id="overlay">
       <h2 id="ovTitle">Snake</h2>
       <p class="big" id="ovText">Friss Futter, wachse – aber beiß dich nicht selbst!</p>
@@ -300,13 +300,15 @@ const BG_DATA = [
                        obstacle: 'Gegen ein Hindernis gestoßen.' };
 
   // ---- Highscore (pro Modus) ----
-  const modeKey = () => 'snake.high.' + [opt.wrap, opt.obstacles, opt.special].map(o => o.checked ? 1 : 0).join('');
+  const GRID_W = 28, GRID_H = 18;   // Querformat
+  // Highscore je Feldgröße, sonst nicht vergleichbar
+  const modeKey = () => `snake.high.${GRID_W}x${GRID_H}.` + [opt.wrap, opt.obstacles, opt.special].map(o => o.checked ? 1 : 0).join('');
   function loadHigh() { try { return parseInt(localStorage.getItem(modeKey()), 10) || 0; } catch { return 0; } }
   function saveHigh(v) { try { localStorage.setItem(modeKey(), String(v)); } catch { /* ignorieren */ } }
   let high = loadHigh();
 
   // ---- Spiel ----
-  const options = () => ({ wrap: opt.wrap.checked, obstacles: opt.obstacles.checked, special: opt.special.checked });
+  const options = () => ({ width: GRID_W, height: GRID_H, wrap: opt.wrap.checked, obstacles: opt.obstacles.checked, special: opt.special.checked });
   let game = SnakeCore.createGame(options());
 
   function applyOptions() {
@@ -468,15 +470,20 @@ const BG_DATA = [
       return;
     }
     const W = canvas.width, H = canvas.height;
+    // Bild formatfüllend skalieren und mittig zuschneiden (keine Verzerrung)
+    const cover = img => {
+      const s = Math.min(img.naturalWidth / W, img.naturalHeight / H), sw = W * s, sh = H * s;
+      ctx.drawImage(img, (img.naturalWidth - sw) / 2, (img.naturalHeight - sh) / 2, sw, sh, 0, 0, W, H);
+    };
     const t = (now - bgFadeStart) / BG_FADE_MS;
     if (bgPrev !== null && t < 1) {
-      ctx.drawImage(backgrounds[bgPrev], 0, 0, W, H);
+      cover(backgrounds[bgPrev]);
       ctx.globalAlpha = Math.max(0, t);
-      ctx.drawImage(cur, 0, 0, W, H);
+      cover(cur);
       ctx.globalAlpha = 1;
     } else {
       bgPrev = null;
-      ctx.drawImage(cur, 0, 0, W, H);
+      cover(cur);
     }
     // Abdunklung + feines Raster, damit die Schlange gut sichtbar bleibt
     ctx.fillStyle = `rgba(0,0,0,${BG_DIM})`;

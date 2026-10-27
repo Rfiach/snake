@@ -40,6 +40,7 @@ Der Spieler steuert eine Schlange, die sich ständig weiterbewegt. Ziel: möglic
   - `snake_core.py`: reine Spiellogik (`Game`), ohne pygame, getestet in `test_snake_core.py` (unittest).
   - `snake.py`: pygame-Oberfläche, Loop mit festen Schritten, Eingabe, Overlays. Optionen per Taste 1/2/3 vor dem Start. Highscore in `highscore.json`.
 - Browser-Version `index.html` (HTML/JS, Canvas) mit gleichem Funktionsumfang; Logik im `<script id="core">`.
+- Spielfeld: 28 × 18 Zellen (Querformat), in beiden Versionen gleich. pygame-Fenster 932 × 804 px (passt auf 1536 × 912 nutzbare Fläche bei 150 % Skalierung). Highscore getrennt je Feldgröße.
 - Varianten im Umfang: Basisspiel + Wrap-around, Spezialfutter, Hindernisse (je als Option umschaltbar).
 - Darstellung: Schlange in Regenbogenfarben (durchlaufend), Kopf weiß mit Regenbogen-Rand, rot bei Game Over.
 - Hintergrund: 8 Weltraum-Bilder (`assets/bg_01..08.png`, generiert mit `tools/make_backgrounds.py`). Wechsel zum nächsten Bild bei jedem gefressenen Futter (normal + Spezial), 400 ms Überblendung, Abdunklung + feines Raster für Lesbarkeit. Fallback ohne Bilder: Schachbrett.

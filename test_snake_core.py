@@ -85,6 +85,20 @@ class TestSnakeCore(unittest.TestCase):
             self.assertNotIn(g.food, g.obstacle_set)
             self.assertNotIn(g.food, g.snake)
 
+    def test_landscape_board(self):
+        g = make(width=28, height=18, use_obstacles=True)
+        self.assertTrue(set(g.snake).isdisjoint(g.obstacle_set))
+        self.assertTrue(all(0 <= x < 28 and 0 <= y < 18 for x, y in g.obstacles))
+        # Wand liegt erst bei x = 28, nicht bei 20
+        g = make(width=28, height=18)
+        g.food = (0, 0)
+        hx = g.snake[0][0]
+        for _ in range(27 - hx):
+            g.step()
+        self.assertEqual(g.state, RUNNING)
+        g.step()
+        self.assertEqual((g.state, g.death_reason), (OVER, "wall"))
+
     def test_win_full_board(self):
         g = Game(width=3, height=2, rng=lambda: 0.0)
         g.start()
