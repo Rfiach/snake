@@ -2,7 +2,8 @@
 import random
 import unittest
 
-from snake_core import DIRS, OVER, RUNNING, WON, Game, Special
+from snake_core import (DIRS, MAX_SCORES, NAME_MAX, OVER, RUNNING, WON, Game, Special, clean_name,
+                        insert_score, qualifies)
 
 
 def make(**kw) -> Game:
@@ -147,6 +148,41 @@ class TestSnakeCore(unittest.TestCase):
                 self.assertEqual(len(set(g.snake)), len(g.snake))
                 if g.food:
                     self.assertNotIn(g.food, g.snake)
+
+
+def entries(*points):
+    return [{"name": f"P{i}", "score": s} for i, s in enumerate(points)]
+
+
+class TestLeaderboard(unittest.TestCase):
+    def test_insert_sorted_and_rank(self):
+        new, rank = insert_score(entries(50, 30, 10), {"name": "X", "score": 40})
+        self.assertEqual([e["score"] for e in new], [50, 40, 30, 10])
+        self.assertEqual(rank, 1)
+
+    def test_tie_keeps_older_first(self):
+        new, rank = insert_score(entries(50, 30), {"name": "X", "score": 30})
+        self.assertEqual(rank, 2)
+        self.assertEqual(new[1]["name"], "P1")
+
+    def test_max_ten_entries(self):
+        full = entries(*range(100, 0, -10))          # 10 Einträge: 100 … 10
+        self.assertEqual(len(full), MAX_SCORES)
+        new, rank = insert_score(full, {"name": "X", "score": 55})
+        self.assertEqual((len(new), rank, new[-1]["score"]), (MAX_SCORES, 5, 20))
+
+    def test_not_qualified(self):
+        full = entries(*range(100, 0, -10))
+        self.assertFalse(qualifies(full, 10))      # Gleichstand mit Platz 10 reicht nicht
+        self.assertFalse(qualifies([], 0))         # 0 Punkte nie
+        self.assertTrue(qualifies([], 10))
+        new, rank = insert_score(full, {"name": "X", "score": 5})
+        self.assertEqual((new, rank), (full, None))
+
+    def test_clean_name(self):
+        self.assertEqual(clean_name("  Max   Muster \n"), "Max Muster")
+        self.assertEqual(clean_name("\t\x00 "), "Anonym")
+        self.assertEqual(len(clean_name("x" * 50)), NAME_MAX)
 
 
 if __name__ == "__main__":

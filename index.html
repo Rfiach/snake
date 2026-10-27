@@ -39,6 +39,22 @@
              background: var(--panel); border-radius: 8px; padding: 10px; }
   .options label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
   .options small { width: 100%; text-align: center; color: var(--muted); }
+  .secondary { margin-top: 10px; background: var(--panel); color: var(--text); padding: 8px 18px; }
+  .secondary:hover { background: #334155; }
+  .hidden { display: none !important; }
+  .name-form { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 6px; }
+  .name-form input { font: inherit; font-size: 20px; text-align: center; width: 260px; padding: 8px;
+                     border-radius: 8px; border: 2px solid var(--accent); background: var(--panel); color: var(--text); }
+  .name-form .row { display: flex; gap: 8px; }
+  .name-form .row button { margin-top: 0; }
+  .mode-switch { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 8px; }
+  .mode-switch button { background: var(--panel); color: var(--text); padding: 2px 10px; font-size: 18px; }
+  .scores { border-collapse: collapse; min-width: 420px; font-variant-numeric: tabular-nums; }
+  .scores th { color: var(--muted); font-weight: normal; font-size: 12px; padding: 2px 10px; }
+  .scores td { padding: 3px 10px; text-align: center; }
+  .scores td.name { text-align: left; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .scores th.name { text-align: left; }
+  .scores tr.mark td { background: #3f340c; color: var(--gold); }
   .help { text-align: center; color: var(--muted); font-size: 13px; margin: 8px 0; }
   kbd { background: var(--panel); border-radius: 4px; padding: 1px 6px; font-size: 12px; }
   .dpad { display: grid; grid-template-columns: repeat(3, 56px); grid-template-rows: repeat(2, 56px);
@@ -65,7 +81,28 @@
       <h2 id="ovTitle">Snake</h2>
       <p class="big" id="ovText">Friss Futter, wachse – aber beiß dich nicht selbst!</p>
       <p id="ovHint">Pfeiltasten / WASD zum Starten</p>
+      <form class="name-form hidden" id="nameForm" autocomplete="off">
+        <label for="nameInput">Dein Name:</label>
+        <input id="nameInput" maxlength="16" spellcheck="false">
+        <div class="row">
+          <button type="submit" class="primary">Speichern</button>
+          <button type="button" class="secondary" id="nameSkip">Überspringen</button>
+        </div>
+      </form>
+      <div class="hidden" id="boardView">
+        <div class="mode-switch">
+          <button id="modePrev" aria-label="vorheriger Modus">←</button>
+          <span id="modeLabel"></span>
+          <button id="modeNext" aria-label="nächster Modus">→</button>
+        </div>
+        <table class="scores">
+          <thead><tr><th>#</th><th class="name">Name</th><th>Punkte</th><th>Länge</th><th>Datum</th></tr></thead>
+          <tbody id="scoreRows"></tbody>
+        </table>
+        <p id="boardEmpty">Noch keine Einträge</p>
+      </div>
       <button class="primary" id="ovButton">Spiel starten</button>
+      <button class="secondary" id="ovBoard">Bestenliste (H)</button>
     </div>
   </div>
 
@@ -78,7 +115,7 @@
 
   <p class="help">
     <kbd>←↑→↓</kbd> / <kbd>WASD</kbd> steuern · <kbd>Leertaste</kbd> / <kbd>P</kbd> Pause ·
-    <kbd>Enter</kbd> Start / Neustart
+    <kbd>Enter</kbd> Start / Neustart · <kbd>H</kbd> Bestenliste
   </p>
 
   <div class="dpad" id="dpad">
@@ -253,6 +290,29 @@ const SnakeCore = (() => {
     return g.lastEvent;
   }
 
+  // ---- Bestenliste (Top 10 je Modus) ----
+  const MAX_SCORES = 10, NAME_MAX = 16, DEFAULT_NAME = 'Anonym';
+
+  // Steuerzeichen entfernen, Leerraum zusammenfassen, auf NAME_MAX kürzen.
+  function cleanName(name) {
+    const n = String(name ?? '').replace(/\p{C}/gu, '').split(/\s+/).filter(Boolean).join(' ');
+    return [...n].slice(0, NAME_MAX).join('').trim() || DEFAULT_NAME;
+  }
+
+  // Reicht die Punktzahl für einen Platz in der Bestenliste?
+  const qualifies = (scores, score) =>
+    score > 0 && (scores.length < MAX_SCORES || score > scores[MAX_SCORES - 1].score);
+
+  // Eintrag einsortieren (bei Gleichstand bleibt der ältere vorn), auf MAX_SCORES kürzen.
+  // Gibt { list, rank } zurück; rank ist 0-basiert oder null, wenn nicht in der Liste.
+  function insertScore(scores, entry) {
+    if (!qualifies(scores, entry.score)) return { list: scores.slice(), rank: null };
+    let rank = scores.findIndex(e => entry.score > e.score);
+    if (rank < 0) rank = scores.length;
+    const list = [...scores.slice(0, rank), entry, ...scores.slice(rank)].slice(0, MAX_SCORES);
+    return { list, rank };
+  }
+
   function start(g) { if (g.state === 'start') g.state = 'running'; }
   function togglePause(g) {
     if (g.state === 'running') g.state = 'paused';
@@ -261,7 +321,7 @@ const SnakeCore = (() => {
   function restart(g) { reset(g); g.state = 'running'; }
 
   return { createGame, reset, step, queueDirection, start, togglePause, restart, spawnFood, freeCells,
-           DIRS, OPPOSITE };
+           cleanName, qualifies, insertScore, DIRS, OPPOSITE, MAX_SCORES, NAME_MAX };
 })();
 if (typeof module !== 'undefined') module.exports = SnakeCore;
 /* ===== END SNAKE-CORE ===== */
@@ -291,6 +351,8 @@ const BG_DATA = [
   const ui = { score: $('score'), length: $('length'), high: $('high'),
                title: $('ovTitle'), text: $('ovText'), hint: $('ovHint'), button: $('ovButton') };
   const opt = { wrap: $('optWrap'), obstacles: $('optObstacles'), special: $('optSpecial') };
+  const lb = { form: $('nameForm'), input: $('nameInput'), skip: $('nameSkip'), view: $('boardView'),
+               label: $('modeLabel'), rows: $('scoreRows'), empty: $('boardEmpty'), open: $('ovBoard') };
 
   const KEYMAP = {
     ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
@@ -299,13 +361,48 @@ const BG_DATA = [
   const DEATH_TEXT = { wall: 'Gegen die Wand gefahren.', self: 'In den eigenen Schwanz gebissen.',
                        obstacle: 'Gegen ein Hindernis gestoßen.' };
 
-  // ---- Highscore (pro Modus) ----
   const GRID_W = 28, GRID_H = 18;   // Querformat
-  // Highscore je Feldgröße, sonst nicht vergleichbar
-  const modeKey = () => `snake.high.${GRID_W}x${GRID_H}.` + [opt.wrap, opt.obstacles, opt.special].map(o => o.checked ? 1 : 0).join('');
-  function loadHigh() { try { return parseInt(localStorage.getItem(modeKey()), 10) || 0; } catch { return 0; } }
-  function saveHigh(v) { try { localStorage.setItem(modeKey(), String(v)); } catch { /* ignorieren */ } }
-  let high = loadHigh();
+
+  // ---- Bestenliste (Top 10 je Feldgröße und Modus) ----
+  // Modus = Bits für Wrap/Hindernisse/Spezialfutter, z. B. '101'
+  const OPTION_LABELS = ['Wrap', 'Hindernisse', 'Spezialfutter'];
+  const ALL_MODES = Array.from({ length: 8 }, (_, i) => i.toString(2).padStart(3, '0'));
+  const currentMode = () => [opt.wrap, opt.obstacles, opt.special].map(o => o.checked ? 1 : 0).join('');
+  const modeLabel = m => OPTION_LABELS.filter((_, i) => m[i] === '1').join(' + ') || 'Basis';
+
+  // Speicher hinter einer async-Schnittstelle, damit später ein Online-Speicher eingesetzt werden kann
+  const ScoreStore = {
+    key: m => `snake.scores.${GRID_W}x${GRID_H}.${m}`,
+    async load(m) {
+      try {
+        const v = JSON.parse(localStorage.getItem(this.key(m)) || 'null');
+        if (Array.isArray(v)) return v;
+        // Älteres Format: nur eine Zahl je Modus
+        const old = parseInt(localStorage.getItem(`snake.high.${GRID_W}x${GRID_H}.${m}`), 10);
+        return old > 0 ? [{ name: 'Unbekannt', score: old, length: 0, date: '' }] : [];
+      } catch { return []; }
+    },
+    async add(m, entry) {
+      const res = SnakeCore.insertScore(await this.load(m), entry);
+      try { localStorage.setItem(this.key(m), JSON.stringify(res.list)); } catch { /* ignorieren */ }
+      return res;
+    },
+  };
+
+  // Name gilt nur für diese Sitzung (bis der Tab geschlossen wird)
+  const session = {
+    get name() { try { return sessionStorage.getItem('snake.name') || ''; } catch { return ''; } },
+    set name(v) { try { sessionStorage.setItem('snake.name', v); } catch { /* ignorieren */ } },
+  };
+
+  let table = [], high = 0;
+  let view = 'main';                  // main | name | board
+  let boardMode = currentMode(), highlight = null;   // highlight: { mode, rank }
+  async function refreshTable() {
+    table = await ScoreStore.load(currentMode());
+    high = table.length ? table[0].score : 0;
+    updateHud();
+  }
 
   // ---- Spiel ----
   const options = () => ({ width: GRID_W, height: GRID_H, wrap: opt.wrap.checked, obstacles: opt.obstacles.checked, special: opt.special.checked });
@@ -315,8 +412,8 @@ const BG_DATA = [
     // Nur außerhalb eines laufenden Spiels sofort übernehmen
     if (game.state === 'running' || game.state === 'paused') return;
     game = SnakeCore.createGame(options());
-    high = loadHigh();
-    render(); updateHud(); updateOverlay();
+    view = 'main';
+    render(); updateHud(); updateOverlay(); refreshTable();
   }
   Object.values(opt).forEach(o => o.addEventListener('change', applyOptions));
 
@@ -324,9 +421,9 @@ const BG_DATA = [
     if (game.state === 'start') SnakeCore.start(game);
     else if (game.state === 'over' || game.state === 'won') {
       game = SnakeCore.createGame(options());
-      high = loadHigh();
       SnakeCore.start(game);
     }
+    view = 'main'; highlight = null;
     acc = 0;
     updateOverlay(); updateHud();
   }
@@ -338,7 +435,19 @@ const BG_DATA = [
   }
 
   document.addEventListener('keydown', e => {
-    if (e.target.tagName === 'INPUT') e.target.blur();
+    // Während der Namenseingabe steuern Tasten nicht das Spiel
+    if (e.target === lb.input) { if (e.key === 'Escape') { e.preventDefault(); skipName(); } return; }
+    if (view === 'name') return;
+    if (e.target.type === 'checkbox') e.target.blur();
+    if (view === 'board') {
+      const k = e.key.toLowerCase();
+      if (k === 'arrowleft' || k === 'a') { e.preventDefault(); switchMode(-1); }
+      else if (k === 'arrowright' || k === 'd') { e.preventDefault(); switchMode(1); }
+      else if (k === 'h' || k === 'escape') { e.preventDefault(); closeBoard(); }
+      else if (k === 'enter' || k === ' ') { e.preventDefault(); begin(); }
+      return;
+    }
+    if ((e.key === 'h' || e.key === 'H') && game.state !== 'running' && game.state !== 'paused') { openBoard(); return; }
     const d = KEYMAP[e.key];
     if (d) { e.preventDefault(); onDirection(d); return; }
     if (e.key === ' ' || e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
@@ -349,6 +458,12 @@ const BG_DATA = [
     }
     if (e.key === 'Enter') { e.preventDefault(); if (game.state !== 'running') { if (game.state === 'paused') { SnakeCore.togglePause(game); acc = 0; updateOverlay(); } else begin(); } }
   });
+
+  lb.form.addEventListener('submit', e => { e.preventDefault(); submitName(); });
+  lb.skip.addEventListener('click', skipName);
+  lb.open.addEventListener('click', () => (view === 'board' ? closeBoard() : openBoard()));
+  $('modePrev').addEventListener('click', () => switchMode(-1));
+  $('modeNext').addEventListener('click', () => switchMode(1));
 
   ui.button.addEventListener('click', () => {
     if (game.state === 'paused') { SnakeCore.togglePause(game); acc = 0; updateOverlay(); }
@@ -395,12 +510,60 @@ const BG_DATA = [
 
   function onGameEnd(ev) {
     acc = 0;
-    if (game.score > high) { high = game.score; saveHigh(high); game.newHigh = true; }
+    game.newHigh = game.score > high;
+    if (SnakeCore.qualifies(table, game.score)) {
+      view = 'name';
+      lb.input.value = session.name;
+      setTimeout(() => { lb.input.focus(); lb.input.select(); }, 0);
+    }
     if (ev === 'over') {
       board.classList.add('flash');
       setTimeout(() => board.classList.remove('flash'), 600);
     }
     updateOverlay();
+  }
+
+  // ---- Bestenliste: Eingabe und Anzeige ----
+  async function submitName() {
+    const name = SnakeCore.cleanName(lb.input.value);
+    session.name = name;
+    const mode = currentMode();
+    const entry = { name, score: game.score, length: game.snake.length, date: new Date().toISOString().slice(0, 10) };
+    const { list, rank } = await ScoreStore.add(mode, entry);
+    table = list;
+    high = list.length ? list[0].score : 0;
+    updateHud();
+    highlight = rank === null ? null : { mode, rank };
+    lb.input.blur();
+    openBoard();
+  }
+
+  function skipName() { lb.input.blur(); view = 'main'; updateOverlay(); }
+
+  function openBoard() { boardMode = currentMode(); view = 'board'; updateOverlay(); renderBoard(); }
+  function closeBoard() { view = 'main'; updateOverlay(); }
+  function switchMode(step) {
+    boardMode = ALL_MODES[(ALL_MODES.indexOf(boardMode) + step + ALL_MODES.length) % ALL_MODES.length];
+    renderBoard();
+  }
+
+  async function renderBoard() {
+    const mode = boardMode, rows = await ScoreStore.load(mode);
+    if (mode !== boardMode) return;          // inzwischen umgeschaltet
+    lb.label.textContent = modeLabel(mode);
+    lb.rows.replaceChildren(...rows.map((e, i) => {
+      const tr = document.createElement('tr');
+      if (highlight && highlight.mode === mode && highlight.rank === i) tr.className = 'mark';
+      const date = e.date ? e.date.split('-').reverse().join('.') : '–';
+      for (const [text, cls] of [[i + 1], [e.name, 'name'], [e.score], [e.length || '–'], [date]]) {
+        const td = document.createElement('td');
+        td.textContent = text;               // textContent: Namen werden nie als HTML interpretiert
+        if (cls) td.className = cls;
+        tr.append(td);
+      }
+      return tr;
+    }));
+    lb.empty.classList.toggle('hidden', rows.length > 0);
   }
 
   // ---- HUD & Overlay ----
@@ -414,6 +577,24 @@ const BG_DATA = [
     overlay.className = 'overlay';
     const s = game.state;
     if (s === 'running') { overlay.classList.add('hidden'); return; }
+    const ended = s === 'over' || s === 'won';
+    lb.form.classList.toggle('hidden', view !== 'name');
+    lb.view.classList.toggle('hidden', view !== 'board');
+    lb.open.classList.toggle('hidden', view === 'name' || s === 'paused');
+    lb.open.textContent = view === 'board' ? 'Schließen' : 'Bestenliste (H)';
+    for (const el of [ui.text, ui.hint, ui.button]) el.classList.toggle('hidden', view !== 'main');
+    if (view === 'board') ui.button.classList.remove('hidden');
+    if (view === 'name') {
+      ui.title.textContent = game.newHigh ? '🏆 Neuer Highscore!' : 'Bestenliste';
+      ui.text.textContent = `Punkte: ${game.score} · Länge: ${game.snake.length}`;
+      ui.text.classList.remove('hidden');
+      return;
+    }
+    if (view === 'board') {
+      ui.title.textContent = 'Bestenliste';
+      ui.button.textContent = ended ? 'Neues Spiel' : 'Spiel starten';
+      return;
+    }
     if (s === 'start') {
       ui.title.textContent = 'Snake';
       ui.text.textContent = 'Friss Futter, wachse – aber beiß dich nicht selbst!';
@@ -587,7 +768,7 @@ const BG_DATA = [
     ctx.closePath(); ctx.fill();
   }
 
-  updateHud(); updateOverlay(); render();
+  updateHud(); updateOverlay(); render(); refreshTable();
   requestAnimationFrame(frame);
 })();
 </script>

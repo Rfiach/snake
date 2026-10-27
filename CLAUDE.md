@@ -38,8 +38,9 @@ Der Spieler steuert eine Schlange, die sich ständig weiterbewegt. Ziel: möglic
 ## Entscheidungen
 - Hauptversion: Python mit pygame.
   - `snake_core.py`: reine Spiellogik (`Game`), ohne pygame, getestet in `test_snake_core.py` (unittest).
-  - `snake.py`: pygame-Oberfläche, Loop mit festen Schritten, Eingabe, Overlays. Optionen per Taste 1/2/3 vor dem Start. Highscore in `highscore.json`.
+  - `snake.py`: pygame-Oberfläche, Loop mit festen Schritten, Eingabe, Overlays. Optionen per Taste 1/2/3 vor dem Start. Bestenliste in `highscore.json`.
 - Browser-Version `index.html` (HTML/JS, Canvas) mit gleichem Funktionsumfang; Logik im `<script id="core">`.
+- Bestenliste: Top 10 je Feldgröße und Optionskombination (Name, Punkte, Länge, Datum). Logik (`clean_name`, `qualifies`, `insert_score`) im Kern beider Versionen. Namensabfrage nur, wenn die Punkte für die Liste reichen; Name wird nur für die Session gemerkt (pygame: Laufzeit, Browser: `sessionStorage`). Anzeige per Taste H. Browser speichert über `ScoreStore` (async), damit später ein Online-Speicher (geplant: Cloudflare Worker + D1) eingesetzt werden kann. pygame bleibt rein lokal.
 - Spielfeld: 28 × 18 Zellen (Querformat), in beiden Versionen gleich. pygame-Fenster 932 × 804 px (passt auf 1536 × 912 nutzbare Fläche bei 150 % Skalierung). Highscore getrennt je Feldgröße.
 - Varianten im Umfang: Basisspiel + Wrap-around, Spezialfutter, Hindernisse (je als Option umschaltbar).
 - Darstellung: Schlange in Regenbogenfarben (durchlaufend), Kopf weiß mit Regenbogen-Rand, rot bei Game Over.

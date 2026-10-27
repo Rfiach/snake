@@ -214,3 +214,31 @@ class Game:
                     return WON
                 self._maybe_spawn_special()
         return self.last_event
+
+
+# ---------- Bestenliste (Top 10 je Modus) ----------
+MAX_SCORES = 10
+NAME_MAX = 16
+DEFAULT_NAME = "Anonym"
+
+
+def clean_name(name: str) -> str:
+    """Steuerzeichen entfernen, Leerraum zusammenfassen, auf NAME_MAX kürzen."""
+    name = "".join(ch for ch in str(name) if ch.isprintable())
+    name = " ".join(name.split())[:NAME_MAX].strip()
+    return name or DEFAULT_NAME
+
+
+def qualifies(scores: list[dict], score: int) -> bool:
+    """Reicht die Punktzahl für einen Platz in der Bestenliste?"""
+    return score > 0 and (len(scores) < MAX_SCORES or score > scores[MAX_SCORES - 1]["score"])
+
+
+def insert_score(scores: list[dict], entry: dict) -> tuple[list[dict], Optional[int]]:
+    """Eintrag einsortieren (bei Gleichstand bleibt der ältere vorn), auf MAX_SCORES kürzen.
+    Gibt die neue Liste und den Platz (0-basiert) zurück, None wenn nicht in der Liste."""
+    if not qualifies(scores, entry["score"]):
+        return list(scores), None
+    rank = next((i for i, e in enumerate(scores) if entry["score"] > e["score"]), len(scores))
+    new = scores[:rank] + [entry] + scores[rank:]
+    return new[:MAX_SCORES], rank

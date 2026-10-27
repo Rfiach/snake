@@ -31,6 +31,7 @@ benötigst du einen dauerhaft laufenden Gradio-Server oder einen Hosting-Dienst.
 - **Pfeiltasten / WASD:** Richtung
 - **Leertaste / P:** Pause
 - **Enter:** Start / Neustart
+- **H:** Bestenliste
 - **1 / 2 / 3** (Python, vor dem Start): Wrap-around / Hindernisse / Spezialfutter umschalten
 
 ## Spielfeld
@@ -41,7 +42,13 @@ benötigst du einen dauerhaft laufenden Gradio-Server oder einen Hosting-Dienst.
 - **Hindernisse:** feste Blöcke auf dem Feld
 - **Spezialfutter:** goldener Stern, +50 Punkte, mit Zeitlimit
 
-Normales Futter bringt 10 Punkte; mit jedem Futter wird die Schlange schneller. Der Highscore wird pro Feldgröße und Optionskombination gespeichert (Python: `highscore.json`, Browser: `localStorage`).
+Normales Futter bringt 10 Punkte; mit jedem Futter wird die Schlange schneller.
+
+## Bestenliste
+- Top 10 je Optionskombination mit Name, Punkten, Länge und Datum.
+- Nach dem Spiel wird nach dem Namen gefragt, wenn die Punkte für die Liste reichen (Enter speichert, Esc überspringt). Der Name bleibt für die laufende Sitzung vorbelegt.
+- **H** zeigt die Bestenliste, **←/→** wechselt dort zwischen den Modi.
+- Gespeichert wird lokal: Python in `highscore.json`, Browser im `localStorage`.
 
 ## Weltraum-Hintergründe
 Bei jedem gefressenen Futter wechselt der Hintergrund mit sanfter Überblendung zum nächsten von 8 Weltraum-Motiven (Nebel, Ringplanet, Spiralgalaxie, Schwarzes Loch, Komet …). Die Bilder liegen in `assets/` (in `index.html` eingebettet via `tools/embed_backgrounds.py`) und sind selbst generiert (`tools/make_backgrounds.py`, benötigt numpy + pillow – nur zum Neu-Erzeugen).

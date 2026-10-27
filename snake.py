@@ -1,6 +1,7 @@
 """Snake – pygame-Oberfläche.  Start: py snake.py  (vorher: py -m pip install -r requirements.txt)"""
 from __future__ import annotations
 
+import datetime
 import json
 import math
 import sys
@@ -8,7 +9,8 @@ from pathlib import Path
 
 import pygame
 
-from snake_core import DIRS, OVER, PAUSED, RUNNING, START, WON, Game
+from snake_core import (DIRS, NAME_MAX, OVER, PAUSED, RUNNING, START, WON, Game, clean_name, insert_score,
+                        qualifies)
 
 # ---------- Layout & Farben ----------
 SCALE = 1.5                      # Faktor für HUD, Schrift, Ränder, Linien (nur Optik, nicht die Spiellogik)
@@ -53,17 +55,38 @@ BG_FADE_MS = 400          # Überblendzeit beim Hintergrundwechsel
 BG_DIM = 70               # Abdunklung (0–255) über dem Bild, damit die Schlange gut sichtbar bleibt
 
 
-# ---------- Highscore (pro Optionskombination) ----------
-def load_scores() -> dict:
+# ---------- Bestenliste (Top 10 je Feldgröße und Optionskombination) ----------
+OPTION_KEYS = ("wrap", "obstacles", "special")
+OPTION_LABELS = {"wrap": "Wrap", "obstacles": "Hindernisse", "special": "Spezialfutter"}
+
+
+def mode_key(opts: dict) -> str:
+    bits = "".join("1" if opts[k] else "0" for k in OPTION_KEYS)
+    return f"{GRID_W}x{GRID_H}-{bits}"
+
+
+def mode_label(opts: dict) -> str:
+    return " + ".join(OPTION_LABELS[k] for k in OPTION_KEYS if opts[k]) or "Basis"
+
+
+ALL_MODES = [{k: bool(i >> (2 - j) & 1) for j, k in enumerate(OPTION_KEYS)} for i in range(8)]
+
+
+def load_scores() -> dict[str, list[dict]]:
     try:
-        return json.loads(HIGHSCORE_FILE.read_text(encoding="utf-8"))
+        data = json.loads(HIGHSCORE_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
+    if not isinstance(data, dict):
+        return {}
+    # Altes Format (eine Zahl je Modus) übernehmen
+    return {k: v if isinstance(v, list) else [{"name": "Unbekannt", "score": int(v), "length": 0, "date": ""}]
+            for k, v in data.items() if isinstance(v, (list, int))}
 
 
 def save_scores(scores: dict) -> None:
     try:
-        HIGHSCORE_FILE.write_text(json.dumps(scores), encoding="utf-8")
+        HIGHSCORE_FILE.write_text(json.dumps(scores, ensure_ascii=False, indent=1), encoding="utf-8")
     except OSError:
         pass
 
@@ -85,6 +108,15 @@ class App:
         self.acc = 0.0
         self.flash_until = 0
         self.new_high = False
+
+        # Bestenliste: Namenseingabe nach dem Spiel, Anzeige per Taste H
+        self.session_name = ""        # gilt nur, solange das Programm läuft
+        self.entering = False
+        self.name_buf = ""
+        self.input_from = 0
+        self.board_open = False
+        self.board_mode = 0           # Index in ALL_MODES
+        self.highlight: tuple[str, int] | None = None   # (Modus, Platz) des letzten Eintrags
 
         # Weltraum-Hintergründe: wechseln bei jedem gefressenen Futter
         self.backgrounds = self.load_backgrounds()
@@ -125,13 +157,13 @@ class App:
         self.bg_fade_start = pygame.time.get_ticks()
 
     # ---------- Spielsteuerung ----------
-    def mode_key(self) -> str:
-        bits = "".join("1" if self.opts[k] else "0" for k in ("wrap", "obstacles", "special"))
-        return f"{GRID_W}x{GRID_H}-{bits}"   # Highscore je Feldgröße, sonst nicht vergleichbar
+    @property
+    def table(self) -> list[dict]:
+        return self.scores.get(mode_key(self.opts), [])
 
     @property
     def high(self) -> int:
-        return self.scores.get(self.mode_key(), 0)
+        return self.table[0]["score"] if self.table else 0
 
     def new_game(self) -> Game:
         return Game(width=GRID_W, height=GRID_H, wrap=self.opts["wrap"],
@@ -142,6 +174,8 @@ class App:
             self.game = self.new_game()
         self.game.start()
         self.new_high = False
+        self.board_open = False
+        self.highlight = None
         self.acc = 0.0
 
     def toggle_option(self, name: str) -> None:
@@ -159,16 +193,51 @@ class App:
 
     def on_game_end(self, ev: str) -> None:
         self.acc = 0.0
-        if self.game.score > self.high:
-            self.scores[self.mode_key()] = self.game.score
-            save_scores(self.scores)
-            self.new_high = True
+        self.new_high = self.game.score > self.high
+        if qualifies(self.table, self.game.score):
+            self.entering, self.name_buf = True, self.session_name
+            self.input_from = pygame.time.get_ticks() + 300
         if ev == OVER:
             self.flash_until = pygame.time.get_ticks() + 600
 
+    def submit_name(self) -> None:
+        name = clean_name(self.name_buf)
+        self.session_name = name
+        g, key = self.game, mode_key(self.opts)
+        entry = {"name": name, "score": g.score, "length": len(g.snake), "date": datetime.date.today().isoformat()}
+        self.scores[key], rank = insert_score(self.table, entry)
+        save_scores(self.scores)
+        self.entering = False
+        self.highlight = (key, rank) if rank is not None else None
+        self.open_board()
+
+    def open_board(self) -> None:
+        self.board_mode = ALL_MODES.index(self.opts)
+        self.board_open = True
+
+    def handle_name_key(self, e: pygame.event.Event) -> None:
+        if e.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            self.submit_name()
+        elif e.key == pygame.K_ESCAPE:
+            self.entering = False
+        elif e.key == pygame.K_BACKSPACE:
+            self.name_buf = self.name_buf[:-1]
+
     def handle_key(self, key: int) -> None:
         g = self.game
-        if key in KEYMAP:
+        if self.board_open:
+            # In der Bestenliste: ←/→ wechselt den Modus, Enter/Leertaste startet, H/Esc schließt
+            if key in (pygame.K_LEFT, pygame.K_a, pygame.K_RIGHT, pygame.K_d):
+                step = 1 if key in (pygame.K_RIGHT, pygame.K_d) else -1
+                self.board_mode = (self.board_mode + step) % len(ALL_MODES)
+            elif key in (pygame.K_h, pygame.K_ESCAPE):
+                self.board_open = False
+            elif key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                self.begin()
+            return
+        if key == pygame.K_h and g.state not in (RUNNING, PAUSED):
+            self.open_board()
+        elif key in KEYMAP:
             self.on_direction(KEYMAP[key])
         elif key in (pygame.K_SPACE, pygame.K_p, pygame.K_ESCAPE):
             if g.state in (RUNNING, PAUSED):
@@ -198,7 +267,14 @@ class App:
                 if e.type == pygame.QUIT:
                     pygame.quit()
                     sys.exit()
-                if e.type == pygame.KEYDOWN:
+                if self.entering:
+                    # Während der Namenseingabe steuern Tasten nicht das Spiel
+                    # (kurze Sperre, damit eine Lenk-Taste beim Aufprall nicht im Namen landet)
+                    if e.type == pygame.TEXTINPUT and pygame.time.get_ticks() >= self.input_from:
+                        self.name_buf = (self.name_buf + e.text)[:NAME_MAX]
+                    elif e.type == pygame.KEYDOWN:
+                        self.handle_name_key(e)
+                elif e.type == pygame.KEYDOWN:
                     self.handle_key(e.key)
                 elif focus_lost is not None and e.type == focus_lost and self.game.state == RUNNING:
                     self.game.toggle_pause()
@@ -353,7 +429,7 @@ class App:
             on = self.opts[key]
             col = (ACCENT if on else MUTED) if not locked else (MUTED if not on else (21, 128, 61))
             self.text(f"[{k}] {name}: {'an' if on else 'aus'}", self.f_small, col, (PAD + w * i + w // 2, r.centery))
-        hint = "←↑→↓ / WASD steuern · Leertaste / P Pause · Enter Start/Neustart"
+        hint = "←↑→↓ / WASD steuern · Leertaste / P Pause · Enter Start/Neustart · H Bestenliste"
         if locked:
             hint = "Optionen änderbar vor dem Start / nach Spielende"
         self.text(hint, self.f_small, MUTED, (WIN_W // 2, y0 + sc(46)))
@@ -364,6 +440,13 @@ class App:
         shade.fill((15, 23, 42, 200))
         self.screen.blit(shade, (BOARD_X, BOARD_Y))
         cx, cy = BOARD_X + BOARD_W // 2, BOARD_Y + BOARD_H // 2
+
+        if self.entering:
+            self.draw_name_entry(cx, cy)
+            return
+        if self.board_open:
+            self.draw_leaderboard(cx)
+            return
 
         if g.state == START:
             title, col = "Snake", TEXT
@@ -386,6 +469,53 @@ class App:
         self.text(line, self.f_text, TEXT, (cx, cy + sc(4)))
         self.text(hint, self.f_text, GOLD if self.new_high and g.state in (OVER, WON) else MUTED,
                   (cx, cy + sc(34)))
+        if g.state != PAUSED:
+            self.text("H – Bestenliste", self.f_small, MUTED, (cx, cy + sc(64)))
+
+    def draw_name_entry(self, cx: int, cy: int) -> None:
+        g = self.game
+        title = "Neuer Highscore!" if self.new_high else "Bestenliste"
+        self.text(title, self.f_title, GOLD, (cx, cy - sc(70)))
+        self.text(f"Punkte: {g.score} · Länge: {len(g.snake)}", self.f_text, TEXT, (cx, cy - sc(30)))
+        self.text("Dein Name:", self.f_text, MUTED, (cx, cy + sc(2)))
+        box = pygame.Rect(0, 0, sc(260), sc(38))
+        box.center = (cx, cy + sc(38))
+        pygame.draw.rect(self.screen, PANEL, box, border_radius=sc(6))
+        pygame.draw.rect(self.screen, ACCENT, box, width=2, border_radius=sc(6))
+        cursor = "|" if (pygame.time.get_ticks() // 500) % 2 == 0 else " "
+        self.text(self.name_buf + cursor, self.f_big, TEXT, box.center)
+        self.text("Enter speichern · Esc überspringen", self.f_small, MUTED, (cx, cy + sc(80)))
+
+    def draw_leaderboard(self, cx: int) -> None:
+        opts = ALL_MODES[self.board_mode]
+        key = mode_key(opts)
+        rows = self.scores.get(key, [])
+        y = BOARD_Y + sc(28)
+        self.text("Bestenliste", self.f_title, GOLD, (cx, y))
+        self.text(f"←  {mode_label(opts)}  →", self.f_text, TEXT, (cx, y + sc(36)))
+        cols = (cx - sc(230), cx - sc(190), cx + sc(110), cx + sc(180), cx + sc(255))   # Platz, Name, Punkte, Länge, Datum
+        y += sc(70)
+        for x, label in zip(cols, ("#", "Name", "Punkte", "Länge", "Datum")):
+            surf = self.f_small.render(label, True, MUTED)
+            self.screen.blit(surf, surf.get_rect(midleft=(x, y)) if label == "Name" else surf.get_rect(center=(x, y)))
+        if not rows:
+            self.text("Noch keine Einträge", self.f_text, MUTED, (cx, y + sc(60)))
+        for i, e in enumerate(rows):
+            ry = y + sc(26) + i * sc(22)
+            mark = self.highlight == (key, i)
+            if mark:
+                hl = pygame.Rect(cols[0] - sc(20), ry - sc(10), cx + sc(290) - (cols[0] - sc(20)), sc(20))
+                pygame.draw.rect(self.screen, (63, 52, 12), hl, border_radius=sc(4))
+            col = GOLD if mark else TEXT
+            date = ".".join(reversed(e.get("date", "").split("-"))) if e.get("date") else "–"
+            self.text(str(i + 1), self.f_text, col, (cols[0], ry))
+            name = self.f_text.render(e["name"], True, col)
+            self.screen.blit(name, name.get_rect(midleft=(cols[1], ry)))
+            self.text(str(e["score"]), self.f_text, col, (cols[2], ry))
+            self.text(str(e.get("length") or "–"), self.f_text, col, (cols[3], ry))
+            self.text(date, self.f_small, col, (cols[4], ry))
+        self.text("←/→ Modus wechseln · Enter neues Spiel · H / Esc schließen", self.f_small, MUTED,
+                  (cx, BOARD_Y + BOARD_H - sc(22)))
 
 
 if __name__ == "__main__":
