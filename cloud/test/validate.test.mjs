@@ -1,7 +1,7 @@
 // Ausführen: node --test cloud/test
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { cleanName, obstacleCount, validateEntry } from '../src/validate.js';
+import { REVIEW_LENGTH, cleanName, needsReview, obstacleCount, validateEntry } from '../src/validate.js';
 
 const ok = body => assert.ok(validateEntry(body).entry, JSON.stringify(body));
 const bad = body => assert.ok(validateEntry(body).error, JSON.stringify(body));
@@ -29,6 +29,14 @@ test('maximale Länge mit Hindernissen', () => {
   assert.equal(obstacleCount(), 24);
   ok({ mode: '28x18-010', score: (max - 3) * 10, length: max });
   bad({ mode: '28x18-010', score: (max - 2) * 10, length: max + 1 });
+});
+
+test('sehr hohe Einträge brauchen Freigabe', () => {
+  assert.equal(needsReview({ length: REVIEW_LENGTH - 1 }), false);
+  assert.equal(needsReview({ length: REVIEW_LENGTH }), true);
+  const full = validateEntry({ mode: '28x18-001', score: 6890, length: 504 });   // ganzes Feld gefüllt
+  assert.ok(full.entry);
+  assert.equal(needsReview(full.entry), true);
 });
 
 test('Namen werden bereinigt', () => {

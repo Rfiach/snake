@@ -1,7 +1,8 @@
 // Snake auf Cloudflare: liefert das Spiel aus (statische Assets) und die Bestenlisten-API.
 //   GET  /api/scores?mode=28x18-001   → { list }
-//   POST /api/scores  { mode, name, score, length }   → { list, rank }
-import { MAX_SCORES, isValidMode, validateEntry } from './validate.js';
+//   POST /api/scores  { mode, name, score, length }   → { list, rank, pending }
+//   pending: true → Eintrag wartet auf Freigabe (needsReview), erscheint erst danach in der Liste
+import { MAX_PENDING, MAX_SCORES, isValidMode, needsReview, validateEntry } from './validate.js';
 
 const RATE_LIMIT = 5;          // Einträge pro Minute und Absender
 const MAX_BODY = 1024;         // Bytes
@@ -12,7 +13,7 @@ const json = (data, status = 200) => new Response(JSON.stringify(data), {
 
 async function top(env, mode) {
   const { results } = await env.DB.prepare(
-    'SELECT id, name, score, length, date FROM scores WHERE mode = ?1 ORDER BY score DESC, id ASC LIMIT ?2',
+    'SELECT id, name, score, length, date FROM scores WHERE mode = ?1 AND review = 0 ORDER BY score DESC, id ASC LIMIT ?2',
   ).bind(mode, MAX_SCORES).all();
   return results;
 }
@@ -45,18 +46,21 @@ async function postScore(req, env) {
     .bind(who, now - 60).first();
   if (n >= RATE_LIMIT) return json({ error: 'Zu viele Einträge – bitte kurz warten.' }, 429);
 
-  const date = new Date().toISOString().slice(0, 10);
+  const date = new Date().toISOString().slice(0, 10), review = needsReview(entry) ? 1 : 0;
   const [, , inserted] = await env.DB.batch([
     env.DB.prepare('INSERT INTO submissions (ip_hash, created_at) VALUES (?1, ?2)').bind(who, now),
     env.DB.prepare('DELETE FROM submissions WHERE created_at < ?1').bind(now - 86400),
-    env.DB.prepare('INSERT INTO scores (mode, name, score, length, date) VALUES (?1, ?2, ?3, ?4, ?5) RETURNING id')
-      .bind(entry.mode, entry.name, entry.score, entry.length, date),
-    // Nur die Top 10 je Modus aufbewahren
-    env.DB.prepare(`DELETE FROM scores WHERE mode = ?1 AND id NOT IN
-      (SELECT id FROM scores WHERE mode = ?1 ORDER BY score DESC, id ASC LIMIT ?2)`).bind(entry.mode, MAX_SCORES),
+    env.DB.prepare('INSERT INTO scores (mode, name, score, length, date, review) VALUES (?1, ?2, ?3, ?4, ?5, ?6) RETURNING id')
+      .bind(entry.mode, entry.name, entry.score, entry.length, date, review),
+    // Je Modus nur die Top 10 und die neuesten ungeprüften Einträge aufbewahren
+    env.DB.prepare(`DELETE FROM scores WHERE mode = ?1 AND review = 0 AND id NOT IN
+      (SELECT id FROM scores WHERE mode = ?1 AND review = 0 ORDER BY score DESC, id ASC LIMIT ?2)`).bind(entry.mode, MAX_SCORES),
+    env.DB.prepare(`DELETE FROM scores WHERE mode = ?1 AND review = 1 AND id NOT IN
+      (SELECT id FROM scores WHERE mode = ?1 AND review = 1 ORDER BY id DESC LIMIT ?2)`).bind(entry.mode, MAX_PENDING),
   ]);
   const id = inserted.results[0].id;
   const list = await top(env, entry.mode);
+  if (review) return json({ list: strip(list), rank: null, pending: true });
   const rank = list.findIndex(e => e.id === id);
   return json({ list: strip(list), rank: rank < 0 ? null : rank });
 }

@@ -482,7 +482,8 @@ const BG_XMAS_DATA = [
       if (!SCORE_API) return LocalStore.add(m, entry);
       try {
         const res = await OnlineStore.add(m, entry);
-        storeNote = res.rank === null ? 'Für die Top 10 hat es online knapp nicht gereicht.' : 'Online gespeichert';
+        storeNote = res.pending ? 'Starkes Ergebnis! Es wird geprüft und erscheint nach Freigabe.'
+          : res.rank === null ? 'Für die Top 10 hat es online knapp nicht gereicht.' : 'Online gespeichert';
         storeWarn = res.rank === null;
         return res;
       } catch (err) {

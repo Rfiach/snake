@@ -72,6 +72,16 @@ Lokal testen: `npm run db:init:local`, dann `npm run dev` (http://127.0.0.1:8787
 
 Bestenliste zurücksetzen: `npx wrangler d1 execute snake-scores --remote --command "DELETE FROM scores"`
 
+### Freigabe sehr hoher Einträge
+Einträge ab Länge 300 (`REVIEW_LENGTH` in `cloud/src/validate.js`) sind von Hand kaum zu schaffen. Sie werden gespeichert, aber erst nach Freigabe angezeigt (Spalte `review = 1`, je Modus höchstens 10 wartende). Der Spieler sieht „wird geprüft“.
+```powershell
+cd cloud
+npx wrangler d1 execute snake-scores --remote --command "SELECT id, mode, name, score, length, date FROM scores WHERE review = 1"
+npx wrangler d1 execute snake-scores --remote --command "UPDATE scores SET review = 0 WHERE id = 123"   # freigeben
+npx wrangler d1 execute snake-scores --remote --command "DELETE FROM scores WHERE id = 123"             # verwerfen
+```
+Einzelnen Eintrag aus der Liste löschen: erst mit `SELECT id, name, score, length FROM scores WHERE mode = '28x18-001'` die ID suchen, dann `DELETE FROM scores WHERE id = …`.
+
 ## Weihnachten & Silvester
 Vom 1. Advent bis 30.12. erscheint das Spiel automatisch weihnachtlich, am 31.12. mit Silvester-Feuerwerk, ab 1.1. wieder normal (jedes Jahr neu berechnet). Spielregeln, Punkte und Bestenlisten bleiben gleich – es ändert sich nur die Optik:
 - 8 weihnachtliche Weltraum-Hintergründe (Polarlicht, Tannenbaum-Sternbild, Stern von Bethlehem, Rentierschlitten …)

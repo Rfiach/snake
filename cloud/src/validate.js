@@ -5,6 +5,8 @@ export const GRID_W = 28, GRID_H = 18;
 export const MAX_SCORES = 10, NAME_MAX = 16, DEFAULT_NAME = 'Anonym';
 export const POINTS_FOOD = 10, POINTS_SPECIAL = 50;
 export const START_LENGTH = 3;
+export const REVIEW_LENGTH = 300;   // ab dieser Länge erst nach manueller Freigabe sichtbar
+export const MAX_PENDING = 10;      // so viele ungeprüfte Einträge je Modus werden aufbewahrt
 
 const MODE_RE = new RegExp(`^${GRID_W}x${GRID_H}-[01]{3}$`);
 export const isValidMode = mode => typeof mode === 'string' && MODE_RE.test(mode);
@@ -42,3 +44,6 @@ export function validateEntry(body) {
   }
   return { entry: { mode, name: cleanName(body.name), score, length } };
 }
+
+// Formal plausibel, aber von Hand kaum zu schaffen (z. B. ganzes Feld gefüllt) → erst prüfen
+export const needsReview = entry => entry.length >= REVIEW_LENGTH;
